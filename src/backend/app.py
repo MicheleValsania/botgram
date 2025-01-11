@@ -1,7 +1,8 @@
+# src/backend/app.py
 from flask import Flask, jsonify
-from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from dotenv import load_dotenv
+from .config.database import init_db, db
 import os
 
 # Load environment variables
@@ -13,15 +14,15 @@ def create_app():
 
     # Configure app
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-key-change-this')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///botgram.db')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-    # Initialize extensions
-    db = SQLAlchemy(app)
+    
+    # Initialize database
+    init_db(app)
+    
+    # Initialize migrations
     migrate = Migrate(app, db)
 
     # Register blueprints
-    from src.backend.api.routes import api
+    from .api.routes import api
     app.register_blueprint(api)
 
     @app.route('/')

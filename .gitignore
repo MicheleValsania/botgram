@@ -71,4 +71,4 @@ htmlcov/
 
 # Project specific
 config/credentials.json
-bot_sessions/
+bot_sessions/.env
