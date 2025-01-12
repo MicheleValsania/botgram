@@ -1,0 +1,137 @@
+import logging
+from logging.config import dictConfig
+from flask import request, g
+import time
+from functools import wraps
+from uuid import uuid4
+import json
+from datetime import datetime
+
+def setup_logger():
+    """Configurazione del logger"""
+    dictConfig({
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'standard': {
+                'format': '%(asctime)s [%(levelname)s] [%(request_id)s] %(message)s'
+            },
+            'detailed': {
+                'format': '%(asctime)s [%(levelname)s] [%(request_id)s] [%(name)s:%(lineno)d] %(message)s'
+            }
+        },
+        'filters': {
+            'request_id': {
+                '()': 'src.backend.middleware.logging.RequestIdFilter'
+            }
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'standard',
+                'filters': ['request_id']
+            },
+            'file': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': 'logs/api.log',
+                'maxBytes': 10485760,  # 10MB
+                'backupCount': 10,
+                'formatter': 'detailed',
+                'filters': ['request_id']
+            },
+            'error_file': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': 'logs/error.log',
+                'maxBytes': 10485760,  # 10MB
+                'backupCount': 10,
+                'formatter': 'detailed',
+                'filters': ['request_id'],
+                'level': 'ERROR'
+            }
+        },
+        'root': {
+            'level': 'INFO',
+            'handlers': ['console', 'file', 'error_file']
+        }
+    })
+
+class RequestIdFilter(logging.Filter):
+    """Filtro per aggiungere request_id ai log"""
+    def filter(self, record):
+        record.request_id = getattr(g, 'request_id', 'no_request_id')
+        return True
+
+def log_request():
+    """Middleware per loggare le richieste HTTP"""
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            # Genera un ID univoco per la richiesta
+            g.request_id = str(uuid4())
+            
+            # Prepara i dati della richiesta per il logging
+            request_data = {
+                'method': request.method,
+                'url': request.full_path,
+                'headers': dict(request.headers),
+                'body': request.get_json(silent=True) if request.is_json else None
+            }
+            
+            # Rimuovi informazioni sensibili
+            if request_data['body'] and 'password' in request_data['body']:
+                request_data['body']['password'] = '[REDACTED]'
+            if 'Authorization' in request_data['headers']:
+                request_data['headers']['Authorization'] = '[REDACTED]'
+            
+            # Log della richiesta
+            logging.info(f"Incoming request: {json.dumps(request_data)}")
+            
+            # Misura il tempo di risposta
+            start_time = time.time()
+            
+            try:
+                response = f(*args, **kwargs)
+                duration = time.time() - start_time
+                
+                # Log della risposta
+                response_data = {
+                    'status_code': getattr(response, 'status_code', None),
+                    'duration': f"{duration:.3f}s"
+                }
+                logging.info(f"Request completed: {json.dumps(response_data)}")
+                
+                return response
+            
+            except Exception as e:
+                duration = time.time() - start_time
+                
+                # Log dell'errore
+                error_data = {
+                    'error': str(e),
+                    'duration': f"{duration:.3f}s"
+                }
+                logging.error(f"Request failed: {json.dumps(error_data)}", exc_info=True)
+                raise
+            
+        return wrapped
+    return decorator
+
+def init_logging(app):
+    """Inizializza il sistema di logging"""
+    setup_logger()
+    
+    # Log di avvio applicazione
+    logging.info(f"Application started at {datetime.utcnow().isoformat()}")
+    
+    # Log di tutte le richieste
+    @app.before_request
+    def before_request():
+        g.start_time = time.time()
+        g.request_id = str(uuid4())
+    
+    @app.after_request
+    def after_request(response):
+        if hasattr(g, 'start_time'):
+            duration = time.time() - g.start_time
+            logging.info(f"Request processed in {duration:.3f}s")
+        return response
