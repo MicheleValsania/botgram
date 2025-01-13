@@ -13,17 +13,30 @@ login_schema = LoginSchema()
 login_response_schema = LoginResponseSchema()
 
 @auth_bp.route('/register', methods=['POST'])
-@handle_api_errors
+@auth_rate_limits()     
+@handle_api_errors      
+@log_request()  
 def register():
     """Endpoint per la registrazione di un nuovo account"""
     # Valida i dati in ingresso
-    data = account_schema.load(request.get_json())
+    
+    data = request.get_json()
+    
+    if Account.query.filter_by(username=data['username']).first():
+        return APIResponse.error(message='Username già in uso', status_code=400)
+        
+    # Poi controlla se l'email esiste già
+    if Account.query.filter_by(email=data['email']).first():
+        return APIResponse.error(message='Email già registrata', status_code=400)
+    
     
     # Valida la password
     is_valid, message = validate_password(data['password'])
     if not is_valid:
         return APIResponse.error(message=message, status_code=400)
     
+    data = account_schema.load(request.get_json())
+
     # Verifica se l'username esiste già
     if Account.query.filter_by(username=data['username']).first():
         return APIResponse.error(message='Username già in uso', status_code=400)
@@ -63,7 +76,9 @@ def register():
     )
 
 @auth_bp.route('/login', methods=['POST'])
-@handle_api_errors
+@auth_rate_limits()     
+@handle_api_errors      
+@log_request() 
 def login():
     """Endpoint per il login"""
     # Valida i dati in ingresso
@@ -100,8 +115,9 @@ def login():
     )
 
 @auth_bp.route('/me', methods=['GET'])
-@handle_api_errors
-@token_required
+@auth_rate_limits()     
+@handle_api_errors      
+@log_request() 
 def get_me():
     """Endpoint per ottenere i dati dell'utente corrente"""
     # Ottiene l'account dell'utente autenticato
@@ -115,8 +131,9 @@ def get_me():
     )
 
 @auth_bp.route('/me', methods=['PUT'])
-@handle_api_errors
-@token_required
+@auth_rate_limits()     
+@handle_api_errors      
+@log_request() 
 def update_me():
     """Endpoint per aggiornare i dati dell'utente corrente"""
     account = Account.query.get(request.user_id)
@@ -145,8 +162,9 @@ def update_me():
     )
 
 @auth_bp.route('/me', methods=['DELETE'])
-@handle_api_errors
-@token_required
+@auth_rate_limits()     
+@handle_api_errors      
+@log_request() 
 def delete_me():
     """Endpoint per disattivare l'account corrente"""
     account = Account.query.get(request.user_id)

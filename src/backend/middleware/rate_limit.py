@@ -23,58 +23,39 @@ class RateLimiter:
         @app.errorhandler(429)
         def ratelimit_handler(e):
             return {
+                "success": False,
                 "error": "ratelimit exceeded",
                 "message": str(e.description)
             }, 429
 
 # src/backend/middleware/rate_limit.py
 
-from functools import wraps
-
 def auth_rate_limits():
     def decorator(f):
+        limiter = RateLimiter.get_instance()
+        # Usa direttamente il limiter.limit senza nesting
+        @limiter.limit("5 per minute")
         @wraps(f)
         def wrapped(*args, **kwargs):
-            limiter = RateLimiter.get_instance()
-            limits = ["5 per minute", "20 per hour", "100 per day"]
-            
-            # Applica i limiti dinamicamente
-            decorated = f
-            for limit in limits:
-                decorated = limiter.limit(limit)(decorated)
-            
-            return decorated(*args, **kwargs)
+            return f(*args, **kwargs)
         return wrapped
     return decorator
 
 def api_rate_limits():
+    """Decorator per i limiti di rate sulle API generiche"""
     def decorator(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            limiter = RateLimiter.get_instance()
-            limits = ["1000 per day", "100 per hour", "10 per minute"]
-            
-            # Applica i limiti dinamicamente
-            for limit in limits:
-                decorated = limiter.limit(limit)(f)
-                f = decorated
-            
-            return f(*args, **kwargs)
-        return wrapped
+        limiter = RateLimiter.get_instance()
+        
+        return limiter.limit("1000 per day")(
+               limiter.limit("100 per hour")(
+               limiter.limit("10 per minute")(f)))
     return decorator
 
 def instagram_rate_limits():
+    """Decorator per i limiti di rate sulle operazioni Instagram"""
     def decorator(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            limiter = RateLimiter.get_instance()
-            limits = ["60 per hour", "500 per day"]
-            
-            # Applica i limiti dinamicamente
-            for limit in limits:
-                decorated = limiter.limit(limit)(f)
-                f = decorated
-            
-            return f(*args, **kwargs)
-        return wrapped
+        limiter = RateLimiter.get_instance()
+        
+        return limiter.limit("60 per hour")(
+               limiter.limit("500 per day")(f))
     return decorator

@@ -3,6 +3,7 @@ from flask import request, jsonify, current_app
 import jwt
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+from ..middleware.response import APIResponse  # Aggiungiamo l'import di APIResponse
 
 def generate_token(user_id):
     """
@@ -36,10 +37,10 @@ def token_required(f):
             try:
                 token = auth_header.split(" ")[1]
             except IndexError:
-                return jsonify({'message': 'Token mancante'}), 401
+                return APIResponse.error(message='Token mancante', status_code=401)
 
         if not token:
-            return jsonify({'message': 'Token mancante'}), 401
+            return APIResponse.error(message='Token mancante', status_code=401)
 
         try:
             # Decodifica il token
@@ -51,9 +52,9 @@ def token_required(f):
             # Aggiunge l'ID dell'utente alla request
             request.user_id = payload['sub']
         except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'Token scaduto'}), 401
+            return APIResponse.error(message='Token scaduto', status_code=401)
         except jwt.InvalidTokenError:
-            return jsonify({'message': 'Token non valido'}), 401
+            return APIResponse.error(message='Token non valido', status_code=401)
 
         return f(*args, **kwargs)
 
