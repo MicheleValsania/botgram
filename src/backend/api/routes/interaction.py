@@ -1,12 +1,12 @@
 from flask import Blueprint, request
 from marshmallow import ValidationError
 from sqlalchemy import desc
-from ..models.models import InteractionLog, db
-from ..middleware.auth import token_required
-from ..schemas.schemas import InteractionLogSchema
-from ..middleware.response import APIResponse, handle_api_errors
-from ..middleware.logging import log_request
-from ..middleware.rate_limit import api_rate_limits
+from ...models.models import InteractionLog, db
+from ...middleware.auth import token_required
+from ...schemas.schemas import InteractionLogSchema
+from ...middleware.response import APIResponse, handle_api_errors
+from ...middleware.logging import log_request
+from ...middleware.rate_limit import api_rate_limits
 
 interaction_bp = Blueprint('interaction', __name__)
 interaction_schema = InteractionLogSchema()

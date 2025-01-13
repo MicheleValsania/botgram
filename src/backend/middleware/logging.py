@@ -6,9 +6,57 @@ from functools import wraps
 from uuid import uuid4
 import json
 from datetime import datetime
+import os
 
-def setup_logger():
+
+
+# src/backend/middleware/logging.py
+def is_testing():
+    """Check if we're running in test mode."""
+    try:
+        from flask import current_app
+        return current_app.config.get('TESTING', False)
+    except RuntimeError:
+        return False
+    
+def setup_logger(app):
     """Configurazione del logger"""
+    
+    # Crea la directory logs se non esiste
+    log_dir = os.path.join(app.root_path, '..', '..', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Configura log handlers in base all'ambiente
+    handlers = {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+            'filters': ['request_id']
+        }
+    }
+    
+    # Aggiungi file handlers solo se non siamo in testing
+    if not app.config.get('TESTING', False):
+        handlers.update({
+            'file': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': os.path.join(log_dir, 'api.log'),
+                'maxBytes': 10485760,  # 10MB
+                'backupCount': 10,
+                'formatter': 'detailed',
+                'filters': ['request_id']
+            },
+            'error_file': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': os.path.join(log_dir, 'error.log'),
+                'maxBytes': 10485760,  # 10MB
+                'backupCount': 10,
+                'formatter': 'detailed',
+                'filters': ['request_id'],
+                'level': 'ERROR'
+            }
+        })
+
     dictConfig({
         'version': 1,
         'disable_existing_loggers': False,
@@ -25,40 +73,23 @@ def setup_logger():
                 '()': 'src.backend.middleware.logging.RequestIdFilter'
             }
         },
-        'handlers': {
-            'console': {
-                'class': 'logging.StreamHandler',
-                'formatter': 'standard',
-                'filters': ['request_id']
-            },
-            'file': {
-                'class': 'logging.handlers.RotatingFileHandler',
-                'filename': 'logs/api.log',
-                'maxBytes': 10485760,  # 10MB
-                'backupCount': 10,
-                'formatter': 'detailed',
-                'filters': ['request_id']
-            },
-            'error_file': {
-                'class': 'logging.handlers.RotatingFileHandler',
-                'filename': 'logs/error.log',
-                'maxBytes': 10485760,  # 10MB
-                'backupCount': 10,
-                'formatter': 'detailed',
-                'filters': ['request_id'],
-                'level': 'ERROR'
-            }
-        },
+        'handlers': handlers,
         'root': {
-            'level': 'INFO',
-            'handlers': ['console', 'file', 'error_file']
+            'level': 'DEBUG' if app.debug else 'INFO',
+            'handlers': list(handlers.keys())
         }
     })
 
 class RequestIdFilter(logging.Filter):
     """Filtro per aggiungere request_id ai log"""
     def filter(self, record):
-        record.request_id = getattr(g, 'request_id', 'no_request_id')
+        if is_testing():
+            record.request_id = 'test'
+            return True
+        try:
+            record.request_id = getattr(g, 'request_id', 'no_request_id')
+        except RuntimeError:
+            record.request_id = 'no_context'
         return True
 
 def log_request():
@@ -112,13 +143,13 @@ def log_request():
                 }
                 logging.error(f"Request failed: {json.dumps(error_data)}", exc_info=True)
                 raise
-            
+            return f(*args, **kwargs)
         return wrapped
     return decorator
 
 def init_logging(app):
     """Inizializza il sistema di logging"""
-    setup_logger()
+    setup_logger(app)
     
     # Log di avvio applicazione
     logging.info(f"Application started at {datetime.utcnow().isoformat()}")

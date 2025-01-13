@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from ..config.database import db
 
 class Account(db.Model):
@@ -9,7 +9,7 @@ class Account(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
     last_login = db.Column(db.DateTime)
     
     # Relationships
@@ -32,8 +32,8 @@ class Configuration(db.Model):
     proxy_settings = db.Column(db.JSON, nullable=True)  # Store proxy configuration as JSON
     user_agent = db.Column(db.String(500), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    last_updated = db.Column(db.DateTime, default=lambda: datetime.now(UTC), 
+                           onupdate=lambda: datetime.now(UTC))
     # Relationship
     account = db.relationship("Account", back_populates="configurations")
 
@@ -47,8 +47,8 @@ class InteractionLog(db.Model):
     target_media_id = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(50))  # 'success', 'failed'
     error_message = db.Column(db.String(500), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+
     # Relationship
     account = db.relationship("Account", back_populates="interaction_logs")
 
@@ -65,9 +65,9 @@ class TargetProfile(db.Model):
     is_private = db.Column(db.Boolean, default=False)
     is_verified = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(50), default='pending')  # 'pending', 'processed', 'blacklisted'
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), 
+                         onupdate=lambda: datetime.now(UTC))
     # Relationship
     account = db.relationship("Account", back_populates="target_profiles")
 

@@ -1,11 +1,9 @@
 [run]
 source = src/backend
-omit =
-    */migrations/*
-    */tests/*
+omit = 
+    tests/*
     */__init__.py
-    */venv/*
-    */env/*
+    */migrations/*
 
 [report]
 exclude_lines =
@@ -13,8 +11,3 @@ exclude_lines =
     def __repr__
     raise NotImplementedError
     if __name__ == .__main__.:
-    pass
-    raise ImportError
-
-[html]
-directory = coverage_html_report

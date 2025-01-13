@@ -1,12 +1,11 @@
 from flask import Blueprint, request
-from marshmallow import ValidationError
 from datetime import datetime
-from ..models.models import Account, db
-from ..middleware.auth import generate_token, token_required, hash_password, verify_password, validate_password
-from ..schemas.schemas import AccountSchema, LoginSchema, LoginResponseSchema
-from ..middleware.response import APIResponse, handle_api_errors
-from ..middleware.rate_limit import auth_rate_limits
-from ..middleware.logging import log_request
+from ...models.models import Account, db
+from ...middleware.auth import generate_token, token_required, hash_password, verify_password, validate_password
+from ...schemas.schemas import AccountSchema, LoginSchema, LoginResponseSchema
+from ...middleware.response import APIResponse, handle_api_errors
+from ...middleware.rate_limit import auth_rate_limits
+from ...middleware.logging import log_request
 
 auth_bp = Blueprint('auth', __name__)
 account_schema = AccountSchema()
@@ -14,10 +13,9 @@ login_schema = LoginSchema()
 login_response_schema = LoginResponseSchema()
 
 @auth_bp.route('/register', methods=['POST'])
-@auth_rate_limits()
-@log_request()
 @handle_api_errors
 def register():
+    """Endpoint per la registrazione di un nuovo account"""
     # Valida i dati in ingresso
     data = account_schema.load(request.get_json())
     
@@ -65,10 +63,9 @@ def register():
     )
 
 @auth_bp.route('/login', methods=['POST'])
-@auth_rate_limits()
-@log_request()
 @handle_api_errors
 def login():
+    """Endpoint per il login"""
     # Valida i dati in ingresso
     data = login_schema.load(request.get_json())
     
@@ -103,10 +100,10 @@ def login():
     )
 
 @auth_bp.route('/me', methods=['GET'])
-@token_required
-@log_request()
 @handle_api_errors
+@token_required
 def get_me():
+    """Endpoint per ottenere i dati dell'utente corrente"""
     # Ottiene l'account dell'utente autenticato
     account = Account.query.get(request.user_id)
     if not account:
@@ -118,28 +115,23 @@ def get_me():
     )
 
 @auth_bp.route('/me', methods=['PUT'])
-@token_required
-@log_request()
 @handle_api_errors
+@token_required
 def update_me():
-    # Ottiene l'account dell'utente autenticato
+    """Endpoint per aggiornare i dati dell'utente corrente"""
     account = Account.query.get(request.user_id)
     if not account:
         return APIResponse.error(message='Account non trovato', status_code=404)
     
-    # Valida i dati in ingresso
     data = request.get_json()
     
-    # Aggiorna solo i campi forniti
     if 'email' in data:
-        # Verifica se l'email esiste già per un altro account
         existing_account = Account.query.filter_by(email=data['email']).first()
         if existing_account and existing_account.id != account.id:
             return APIResponse.error(message='Email già registrata', status_code=400)
         account.email = data['email']
         
     if 'password' in data:
-        # Valida la nuova password
         is_valid, message = validate_password(data['password'])
         if not is_valid:
             return APIResponse.error(message=message, status_code=400)
@@ -153,16 +145,14 @@ def update_me():
     )
 
 @auth_bp.route('/me', methods=['DELETE'])
-@token_required
-@log_request()
 @handle_api_errors
+@token_required
 def delete_me():
-    # Ottiene l'account dell'utente autenticato
+    """Endpoint per disattivare l'account corrente"""
     account = Account.query.get(request.user_id)
     if not account:
         return APIResponse.error(message='Account non trovato', status_code=404)
     
-    # Disattiva l'account invece di eliminarlo
     account.is_active = False
     db.session.commit()
     

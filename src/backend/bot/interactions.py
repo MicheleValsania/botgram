@@ -1,102 +1,27 @@
 from typing import Dict, List, Optional
 import logging
-import time
-import random
+from abc import ABC, abstractmethod
 from datetime import datetime
-from ..models.models import Account, Configuration, InteractionLog
+from ..models.models import InteractionLog
 from ..config.database import db
 
-class InstagramBot:
-    def __init__(self, account_id: int):
-        self.account_id = account_id
-        self.config: Optional[Configuration] = None
-        self.session = None
+class BaseInteraction(ABC):
+    """Base class for all Instagram interactions"""
+    
+    def __init__(self, bot):
+        self.bot = bot
         self.logger = logging.getLogger(__name__)
-        self.running = False
-        self.current_delays = {
-            'like': 0,
-            'follow': 0,
-            'unfollow': 0
-        }
 
-    async def initialize(self) -> bool:
-        """Inizializza il bot caricando la configurazione"""
-        try:
-            # Carica la configurazione
-            self.config = Configuration.query.filter_by(account_id=self.account_id).first()
-            if not self.config:
-                self.logger.error(f"Nessuna configurazione trovata per l'account {self.account_id}")
-                return False
-
-            if not self.config.is_active:
-                self.logger.error(f"Configurazione non attiva per l'account {self.account_id}")
-                return False
-
-            # Inizializza la sessione Instagram
-            await self._setup_session()
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Errore durante l'inizializzazione del bot: {str(e)}")
-            return False
-
-    async def _setup_session(self) -> None:
-        """Configura la sessione Instagram"""
-        try:
-            # TODO: Implementare la creazione della sessione Instagram
-            # Utilizzeremo una libreria specifica o requests con proxy
-            pass
-        except Exception as e:
-            self.logger.error(f"Errore durante il setup della sessione: {str(e)}")
-            raise
-
-    async def start(self) -> None:
-        """Avvia il bot"""
-        if self.running:
-            self.logger.warning("Il bot è già in esecuzione")
-            return
-
-        self.running = True
-        try:
-            while self.running:
-                await self._execute_cycle()
-                await self._respect_limits()
-        except Exception as e:
-            self.logger.error(f"Errore durante l'esecuzione del bot: {str(e)}")
-        finally:
-            self.running = False
-
-    async def stop(self) -> None:
-        """Ferma il bot"""
-        self.running = False
-        if self.session:
-            # TODO: Implementare la chiusura della sessione
-            pass
-
-    async def _execute_cycle(self) -> None:
-        """Esegue un ciclo di interazioni"""
-        try:
-            # TODO: Implementare la logica del ciclo di interazioni
-            pass
-        except Exception as e:
-            self.logger.error(f"Errore durante il ciclo di esecuzione: {str(e)}")
-
-    async def _respect_limits(self) -> None:
-        """Gestisce i delay tra le azioni"""
-        if not self.config:
-            return
-
-        delay = random.uniform(self.config.min_delay, self.config.max_delay)
-        await asyncio.sleep(delay)
-
-    def _log_interaction(self, interaction_type: str, target_username: str, 
-                        status: str, error_message: Optional[str] = None) -> None:
-        """Registra un'interazione nel database"""
+    def log_interaction(self, target_username: str, status: str, 
+                       error_message: Optional[str] = None,
+                       media_id: Optional[str] = None) -> None:
+        """Log the interaction in the database"""
         try:
             log = InteractionLog(
-                account_id=self.account_id,
-                interaction_type=interaction_type,
+                account_id=self.bot.account_id,
+                interaction_type=self.get_type(),
                 target_username=target_username,
+                target_media_id=media_id,
                 status=status,
                 error_message=error_message,
                 created_at=datetime.utcnow()
@@ -104,27 +29,124 @@ class InstagramBot:
             db.session.add(log)
             db.session.commit()
         except Exception as e:
-            self.logger.error(f"Errore durante il logging dell'interazione: {str(e)}")
+            self.logger.error(f"Error logging interaction: {str(e)}")
 
-    async def _check_daily_limits(self, interaction_type: str) -> bool:
-        """Verifica se sono stati raggiunti i limiti giornalieri"""
+    @abstractmethod
+    def get_type(self) -> str:
+        """Return the type of interaction"""
+        pass
+
+    @abstractmethod
+    async def execute(self, *args, **kwargs):
+        """Execute the interaction"""
+        pass
+
+class LikeInteraction(BaseInteraction):
+    """Handle liking posts"""
+    
+    def get_type(self) -> str:
+        return 'like'
+
+    async def execute(self, media_id: str, username: str) -> bool:
+        """Like a specific post"""
         try:
-            today = datetime.utcnow().date()
-            count = InteractionLog.query.filter(
-                InteractionLog.account_id == self.account_id,
-                InteractionLog.interaction_type == interaction_type,
-                InteractionLog.status == 'success',
-                func.date(InteractionLog.created_at) == today
-            ).count()
+            if not await self.bot._check_daily_limits('like'):
+                self.logger.warning("Daily like limit reached")
+                return False
 
-            limit_map = {
-                'like': self.config.daily_like_limit,
-                'follow': self.config.daily_follow_limit,
-                'unfollow': self.config.daily_unfollow_limit
-            }
-
-            return count < limit_map.get(interaction_type, 0)
-
+            success = await self.bot.session.like_media(media_id)
+            
+            status = 'success' if success else 'failed'
+            self.log_interaction(
+                target_username=username,
+                status=status,
+                media_id=media_id
+            )
+            
+            return success
         except Exception as e:
-            self.logger.error(f"Errore durante il controllo dei limiti: {str(e)}")
+            self.logger.error(f"Error during like interaction: {str(e)}")
+            self.log_interaction(
+                target_username=username,
+                status='failed',
+                error_message=str(e),
+                media_id=media_id
+            )
             return False
+
+class FollowInteraction(BaseInteraction):
+    """Handle following users"""
+    
+    def get_type(self) -> str:
+        return 'follow'
+
+    async def execute(self, username: str) -> bool:
+        """Follow a specific user"""
+        try:
+            if not await self.bot._check_daily_limits('follow'):
+                self.logger.warning("Daily follow limit reached")
+                return False
+
+            success = await self.bot.session.follow_user(username)
+            
+            status = 'success' if success else 'failed'
+            self.log_interaction(
+                target_username=username,
+                status=status
+            )
+            
+            return success
+        except Exception as e:
+            self.logger.error(f"Error during follow interaction: {str(e)}")
+            self.log_interaction(
+                target_username=username,
+                status='failed',
+                error_message=str(e)
+            )
+            return False
+
+class UnfollowInteraction(BaseInteraction):
+    """Handle unfollowing users"""
+    
+    def get_type(self) -> str:
+        return 'unfollow'
+
+    async def execute(self, username: str) -> bool:
+        """Unfollow a specific user"""
+        try:
+            if not await self.bot._check_daily_limits('unfollow'):
+                self.logger.warning("Daily unfollow limit reached")
+                return False
+
+            success = await self.bot.session.unfollow_user(username)
+            
+            status = 'success' if success else 'failed'
+            self.log_interaction(
+                target_username=username,
+                status=status
+            )
+            
+            return success
+        except Exception as e:
+            self.logger.error(f"Error during unfollow interaction: {str(e)}")
+            self.log_interaction(
+                target_username=username,
+                status='failed',
+                error_message=str(e)
+            )
+            return False
+
+class HashtagInteraction(BaseInteraction):
+    """Handle hashtag-related operations"""
+    
+    def get_type(self) -> str:
+        return 'hashtag'
+
+    async def execute(self, hashtag: str, amount: int = 20) -> List[Dict]:
+        """Get recent media for a hashtag"""
+        try:
+            medias = await self.bot.session.get_hashtag_medias(hashtag, amount)
+            return medias
+        except Exception as e:
+            self.logger.error(f"Error during hashtag interaction: {str(e)}")
+            return []

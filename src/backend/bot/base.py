@@ -169,4 +169,4 @@ class InstagramBot:
             return count < limit_map.get(interaction_type, 0)
 
         except Exception as e:
-            self.logger.error(f"Errore durante il controllo dei limiti: {str
+            self.logger.error(f"Errore durante il controllo dei limiti: {str(e)}")

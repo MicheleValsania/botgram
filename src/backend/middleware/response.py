@@ -96,6 +96,7 @@ def handle_api_errors(f):
                 status_code=500,
                 error_code="INTERNAL_ERROR"
             )
+    return wrapped
 
 # Custom Exceptions
 class APIError(Exception):

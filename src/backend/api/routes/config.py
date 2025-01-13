@@ -1,11 +1,11 @@
 from flask import Blueprint, request
 from marshmallow import ValidationError
-from ..models.models import Configuration, db
-from ..middleware.auth import token_required
-from ..schemas.schemas import ConfigurationSchema
-from ..middleware.response import APIResponse, handle_api_errors
-from ..middleware.logging import log_request
-from ..middleware.rate_limit import api_rate_limits
+from ...models.models import Configuration, db
+from ...middleware.auth import token_required
+from ...schemas.schemas import ConfigurationSchema
+from ...middleware.response import APIResponse, handle_api_errors
+from ...middleware.logging import log_request
+from ...middleware.rate_limit import api_rate_limits
 
 config_bp = Blueprint('config', __name__)
 config_schema = ConfigurationSchema()
