@@ -25,10 +25,14 @@ def create_app(config_name='development'):
         # Initialize extensions
         db.init_app(app)
         Migrate(app, db)
+
+        # Configurazione del rate limiter
+        app.config['RATELIMIT_ENABLED'] = True
+        app.config['RATELIMIT_STORAGE_URL'] = 'memory://'
+        app.config['RATELIMIT_STRATEGY'] = 'fixed-window'
         
-        # Inizializza il rate limiter solo se non siamo in testing
-        if not app.config.get('TESTING', False):
-            RateLimiter.init_app(app)
+        # Inizializza il rate limiter (importante per i test!)
+        RateLimiter.init_app(app)
         
         # Inizializza il logging
         init_logging(app)
