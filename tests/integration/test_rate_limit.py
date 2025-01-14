@@ -2,6 +2,8 @@ import pytest
 import time
 from flask import current_app
 from datetime import datetime
+from src.backend.middleware.rate_limit import RateLimiter
+from src.backend.middleware.response import APIResponse
 
 def test_login_rate_limit(client):
     """Verifica il rate limit sulle richieste di login"""
@@ -57,6 +59,7 @@ def test_instagram_endpoint_rate_limit(client, auth_headers):
     # La 61esima richiesta dovrebbe essere bloccata
     assert responses[60].status_code == 429
 
+@pytest.mark.timeout(70)  # timeout dopo 70 secondi
 def test_rate_limit_reset(client):
     """Verifica che il rate limit si resetti correttamente"""
     data = {'username': 'testuser', 'password': 'wrongpass'}
@@ -76,7 +79,7 @@ def test_rate_limit_reset(client):
     # Ora dovrebbe accettare nuove richieste
     response = client.post('/api/auth/login', json=data)
     assert response.status_code == 401  # Torna a dare errore di credenziali invece che di rate limit
-
+    
 def test_register_rate_limit(client):
     """Test rate limit per la registrazione"""
     # Dati di test

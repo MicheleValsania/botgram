@@ -3,6 +3,18 @@ from src.backend import create_app
 from src.backend.config.database import db
 from src.backend.models.models import Account
 from src.backend.middleware.auth import hash_password, generate_token
+from src.backend.middleware.rate_limit import RateLimiter  # Aggiungi questa importazione
+from src.backend.middleware.response import APIResponse    # Aggiungi questa importazione
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits(app):
+    """Reset rate limits between tests"""
+    limiter = RateLimiter.get_instance()
+    yield
+    try:
+        limiter.reset()
+    except Exception as e:
+        app.logger.warning(f"Failed to reset rate limiter: {e}")
 
 @pytest.fixture(scope='session')
 def app():
@@ -30,20 +42,25 @@ def db_session(app):
         connection = db.engine.connect()
         transaction = connection.begin()
         
-        options = dict(bind=connection, binds={})
-        session = db.create_scoped_session(options=options)
+        # Usiamo direttamente db.session
+        session = db.session
         
-        db.session = session
+        # In alternativa, se proprio vogliamo una sessione scoped:
+        # session = db.session.registry()
         
         yield session
         
         transaction.rollback()
         connection.close()
         session.remove()
-
 @pytest.fixture
 def test_account(app, db_session):
     """Create a test account that remains in session"""
+    # Prima cerchiamo se esiste già
+    existing = Account.query.filter_by(email='test@example.com').first()
+    if existing:
+        return existing
+        
     account = Account(
         username='testuser',
         password_hash=hash_password('Password123!'),
@@ -52,9 +69,6 @@ def test_account(app, db_session):
     )
     db_session.add(account)
     db_session.commit()
-    
-    # Query back the account to ensure it's attached to the session
-    account = Account.query.filter_by(username='testuser').first()
     return account
 
 @pytest.fixture
@@ -62,3 +76,12 @@ def auth_headers(test_account):
     """Create authentication headers for testing protected routes"""
     token = generate_token(test_account.id)
     return {'Authorization': f'Bearer {token}'}
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits(app):
+    """Reset dei rate limit dopo ogni test"""
+    with app.app_context():
+        yield
+        limiter = RateLimiter.get_instance()
+        if hasattr(limiter, 'reset'):
+            limiter.reset()
