@@ -143,10 +143,9 @@ def log_request():
                 }
                 logging.error(f"Request failed: {json.dumps(error_data)}", exc_info=True)
                 raise
-            return f(*args, **kwargs)
+            
         return wrapped
     return decorator
-
 def init_logging(app):
     """Inizializza il sistema di logging"""
     setup_logger(app)
