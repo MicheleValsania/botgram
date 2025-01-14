@@ -1,27 +1,9 @@
 from functools import wraps
-from flask import request, jsonify, current_app
+from flask import request, g, jsonify, current_app
 import jwt
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
-from ..middleware.response import APIResponse  # Aggiungiamo l'import di APIResponse
-
-def generate_token(user_id):
-    """
-    Genera un JWT token per l'utente
-    """
-    try:
-        payload = {
-            'exp': datetime.utcnow() + timedelta(days=1),
-            'iat': datetime.utcnow(),
-            'sub': user_id
-        }
-        return jwt.encode(
-            payload,
-            current_app.config.get('SECRET_KEY'),
-            algorithm='HS256'
-        )
-    except Exception as e:
-        return str(e)
+from ..middleware.response import APIResponse
 
 def token_required(f):
     """
@@ -49,8 +31,8 @@ def token_required(f):
                 current_app.config.get('SECRET_KEY'),
                 algorithms=['HS256']
             )
-            # Aggiunge l'ID dell'utente alla request
-            request.user_id = payload['sub']
+            # Memorizza l'ID dell'utente in g invece che in request
+            g.user_id = payload['sub']
         except jwt.ExpiredSignatureError:
             return APIResponse.error(message='Token scaduto', status_code=401)
         except jwt.InvalidTokenError:
@@ -59,6 +41,24 @@ def token_required(f):
         return f(*args, **kwargs)
 
     return decorated
+
+def generate_token(user_id):
+    """
+    Genera un JWT token per l'utente
+    """
+    try:
+        payload = {
+            'exp': datetime.utcnow() + timedelta(days=1),
+            'iat': datetime.utcnow(),
+            'sub': user_id
+        }
+        return jwt.encode(
+            payload,
+            current_app.config.get('SECRET_KEY'),
+            algorithm='HS256'
+        )
+    except Exception as e:
+        return str(e)
 
 def validate_password(password):
     """

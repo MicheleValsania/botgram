@@ -1,6 +1,5 @@
 from flask import Blueprint
 
-
 # Create the main API blueprint
 api = Blueprint('api', __name__)
 
