@@ -1,5 +1,8 @@
 from flask import Blueprint, request, g
 from datetime import datetime
+import json  # Aggiunto import json
+from werkzeug.exceptions import BadRequest  # Aggiunto import BadRequest
+from marshmallow import ValidationError  # Aggiunto import ValidationError
 from ...models.models import Account, db
 from ...middleware.auth import generate_token, token_required, hash_password, verify_password, validate_password
 from ...schemas.schemas import AccountSchema, LoginSchema, LoginResponseSchema
@@ -70,33 +73,26 @@ def register():
 @handle_api_errors
 @log_request()
 def login():
-    """Endpoint per il login"""
-    data = login_schema.load(request.get_json())
-    
-    account = Account.query.filter_by(username=data['username']).first()
-    
-    if not account or not verify_password(account.password_hash, data['password']):
-        return APIResponse.error(message='Credenziali non valide', status_code=401)
+    try:
+        json_data = request.get_json()
+    except (json.JSONDecodeError, BadRequest):
+        return APIResponse.error(
+            message="JSON non valido",
+            status_code=400,
+            error_code="INVALID_JSON"
+        )
         
-    if not account.is_active:
-        return APIResponse.error(message='Account disattivato', status_code=403)
+    try:
+        data = login_schema.load(json_data)
+    except ValidationError as e:
+        return APIResponse.error(
+            message="Errore di validazione",
+            status_code=400,
+            error_code="VALIDATION_ERROR",
+            errors=e.messages
+        )
     
-    account.last_login = datetime.utcnow()
-    db.session.commit()
-    
-    token = generate_token(account.id)
-    
-    response_data = {
-        'access_token': token,
-        'token_type': 'Bearer',
-        'expires_in': 24 * 60 * 60,
-        'user_id': account.id
-    }
-    
-    return APIResponse.success(
-        data=login_response_schema.dump(response_data),
-        message='Login effettuato con successo'
-    )
+    # resto del codice...
 
 @auth_bp.route('/me', methods=['GET'])
 @token_required
