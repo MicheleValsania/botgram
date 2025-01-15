@@ -49,6 +49,8 @@ class APIResponse:
             error_code: Codice errore interno
             errors: Dettagli errori di validazione
         """
+        current_app.logger.debug(f"[DEBUG] APIResponse.error called with: status={status_code}, message={message}")
+
         response = {
             "success": False,
             "message": message
@@ -59,6 +61,8 @@ class APIResponse:
             
         if errors:
             response["errors"] = errors
+
+        current_app.logger.debug(f"[DEBUG] APIResponse.error returning: {response}")
             
         return jsonify(response), status_code
 

@@ -4,7 +4,7 @@ from ...models.models import Account, db
 from ...middleware.auth import generate_token, token_required, hash_password, verify_password, validate_password
 from ...schemas.schemas import AccountSchema, LoginSchema, LoginResponseSchema
 from ...middleware.response import APIResponse, handle_api_errors
-from ...middleware.rate_limit import auth_rate_limits
+from ...middleware.rate_limit import auth_rate_limits, api_rate_limits
 from ...middleware.logging import log_request
 
 auth_bp = Blueprint('auth', __name__)
@@ -13,6 +13,7 @@ login_schema = LoginSchema()
 login_response_schema = LoginResponseSchema()
 
 @auth_bp.route('/register', methods=['POST'])
+@auth_rate_limits() 
 @handle_api_errors
 def register():
     """Endpoint per la registrazione di un nuovo account"""
@@ -65,6 +66,7 @@ def register():
     )
 
 @auth_bp.route('/login', methods=['POST'])
+@auth_rate_limits()  # Poi questo
 @handle_api_errors
 @log_request()
 def login():
@@ -98,6 +100,7 @@ def login():
 
 @auth_bp.route('/me', methods=['GET'])
 @token_required
+@api_rate_limits()
 @handle_api_errors
 @log_request()
 def get_me():
