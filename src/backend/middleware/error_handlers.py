@@ -1,87 +1,84 @@
-# src/backend/middleware/error_handlers.py
-
-from flask import Blueprint, current_app, request
+from flask import Blueprint, jsonify, request, current_app
+from werkzeug.exceptions import HTTPException, BadRequest, NotFound, Unauthorized, Forbidden
+from marshmallow import ValidationError
 import json
-from werkzeug.exceptions import HTTPException
 from .response import APIResponse
 
-error_handlers = Blueprint('error_handlers', __name__)
-
-@error_handlers.app_errorhandler(json.JSONDecodeError)
-def handle_json_error(e):
-    """Gestisce JSON malformato"""
-    current_app.logger.warning(f"JSON malformato: {str(e)}")
-    return APIResponse.error(
-        message="JSON non valido",
-        status_code=400,
-        error_code="INVALID_JSON",
-        errors={"detail": str(e)}
-    )
-
-@error_handlers.app_errorhandler(400)
-def handle_bad_request(e):
-    """Gestisce richieste non valide"""
-    return APIResponse.error(
-        message="Richiesta non valida",
-        status_code=400,
-        error_code="BAD_REQUEST",
-        errors=getattr(e, 'data', {})
-    )
-
-@error_handlers.app_errorhandler(401)
-def handle_unauthorized(e):
-    """Gestisce errori di autenticazione"""
-    return APIResponse.error(
-        message="Autenticazione richiesta",
-        status_code=401,
-        error_code="UNAUTHORIZED"
-    )
-
-@error_handlers.app_errorhandler(403)
-def handle_forbidden(e):
-    """Gestisce errori di autorizzazione"""
-    return APIResponse.error(
-        message="Accesso negato",
-        status_code=403,
-        error_code="FORBIDDEN"
-    )
-
-@error_handlers.app_errorhandler(404)
-def handle_not_found(e):
-    """Gestisce risorse non trovate"""
-    return APIResponse.error(
-        message="Risorsa non trovata",
-        status_code=404,
-        error_code="NOT_FOUND"
-    )
-
-@error_handlers.app_errorhandler(429)
-def handle_rate_limit(e):
-    """Gestisce superamento rate limit"""
-    return APIResponse.error(
-        message=str(e.description),
-        status_code=429,
-        error_code="RATE_LIMIT_EXCEEDED"
-    )
-
-@error_handlers.app_errorhandler(Exception)
-def handle_generic_error(e):
-    """Gestisce tutti gli altri errori"""
-    # Log dettagliato dell'errore
-    current_app.logger.error(f"Errore non gestito: {str(e)}", exc_info=True)
-    
-    # In produzione, non esporre dettagli interni
-    if current_app.config.get('ENV') == 'production':
-        message = "Si è verificato un errore interno"
-    else:
-        message = str(e)
-    
-    return APIResponse.error(
-        message=message,
-        status_code=500,
-        error_code="INTERNAL_ERROR"
-    )
-
 def init_error_handlers(app):
-    """Inizializza gli error handler nell'app"""
-    app.register_blueprint(error_handlers)
+    @app.errorhandler(json.JSONDecodeError)
+    @app.errorhandler(BadRequest)  # Copre anche errori di JSON malformato
+    def handle_bad_request(e):
+        if isinstance(e, json.JSONDecodeError):
+            error_code = 'INVALID_JSON'
+            message = 'JSON non valido'
+        else:
+            error_code = 'BAD_REQUEST'
+            message = str(e)
+            
+        return APIResponse.error(
+            message=message,
+            status_code=400,
+            error_code=error_code
+        )
+
+    @app.errorhandler(ValidationError)
+    def handle_validation_error(e):
+        return APIResponse.error(
+            message="Errore di validazione",
+            status_code=400,
+            error_code="VALIDATION_ERROR",
+            errors=e.messages
+        )
+
+    @app.errorhandler(401)
+    def handle_unauthorized(e):
+        return APIResponse.error(
+            message="Autenticazione richiesta",
+            status_code=401,
+            error_code="UNAUTHORIZED"
+        )
+
+    @app.errorhandler(403)
+    def handle_forbidden(e):
+        return APIResponse.error(
+            message="Accesso negato",
+            status_code=403,
+            error_code="FORBIDDEN"
+        )
+
+    @app.errorhandler(404)
+    def handle_not_found(e):
+        return APIResponse.error(
+            message="Risorsa non trovata",
+            status_code=404,
+            error_code="NOT_FOUND"
+        )
+
+    @app.errorhandler(Exception)
+    def handle_generic_error(e):
+        app.logger.error(f"Errore non gestito: {str(e)}", exc_info=True)
+        
+        # Messaggio generico in produzione
+        if app.config.get('ENV') == 'production':
+            message = "Errore interno del server"
+        else:
+            message = str(e)
+        
+        return APIResponse.error(
+            message=message,
+            status_code=500,
+            error_code="INTERNAL_ERROR"
+        )
+
+    # Handler specifico per il parsing JSON
+    @app.before_request
+    def handle_json():
+        if request.is_json:
+            try:
+                request.get_json()
+            except json.JSONDecodeError:
+                return APIResponse.error(
+                    message="JSON non valido",
+                    status_code=400,
+                    error_code="INVALID_JSON"
+                )

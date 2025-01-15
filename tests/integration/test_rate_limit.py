@@ -7,44 +7,38 @@ from src.backend.middleware.response import APIResponse
 
 def test_login_rate_limit(client):
     """Verifica il rate limit sulle richieste di login"""
-    # Preparazione dei dati di test
     data = {
         'username': 'testuser',
         'password': 'wrongpassword'
     }
     
-    # Esegue 6 richieste (il limite è 5 per minuto)
     responses = []
     for _ in range(6):
         response = client.post('/api/auth/login', json=data)
         responses.append(response)
 
-    # Verifica che le prime 5 richieste siano state elaborate (401 per credenziali errate)
     for response in responses[:5]:
         assert response.status_code == 401
         
-    # La sesta richiesta dovrebbe essere bloccata dal rate limit
     assert responses[5].status_code == 429
     assert 'rate limit exceeded' in responses[5].get_json()['message'].lower()
 
+@pytest.mark.timeout(70)
 def test_api_endpoint_rate_limit(client, auth_headers):
     """Verifica il rate limit sugli endpoint API generici"""
-    # Esegue 11 richieste (il limite è 10 per minuto)
     responses = []
     for _ in range(11):
         response = client.get('/api/auth/me', headers=auth_headers)
         responses.append(response)
 
-    # Le prime 10 richieste dovrebbero avere successo
     for response in responses[:10]:
         assert response.status_code == 200
         
-    # L'undicesima richiesta dovrebbe essere bloccata
     assert responses[10].status_code == 429
 
+@pytest.mark.timeout(70)
 def test_instagram_endpoint_rate_limit(client, auth_headers):
     """Verifica il rate limit sugli endpoint Instagram"""
-    # Simula 61 richieste Instagram (limite 60 per ora)
     responses = []
     for _ in range(61):
         response = client.post('/api/instagram/action', 
@@ -52,14 +46,13 @@ def test_instagram_endpoint_rate_limit(client, auth_headers):
                              json={'type': 'like', 'media_id': '123'})
         responses.append(response)
 
-    # Prime 60 richieste dovrebbero essere processate
     for response in responses[:60]:
-        assert response.status_code in [200, 404]  # 404 è ok perché stiamo solo testando il rate limit
+        assert response.status_code in [200, 404]
         
-    # La 61esima richiesta dovrebbe essere bloccata
     assert responses[60].status_code == 429
 
-@pytest.mark.timeout(70)  # timeout dopo 70 secondi
+@pytest.mark.timeout(35)
+@pytest.mark.timeout(70)  # Aumentiamo il timeout a 70 secondi
 def test_rate_limit_reset(client):
     """Verifica che il rate limit si resetti correttamente"""
     data = {'username': 'testuser', 'password': 'wrongpass'}
@@ -73,47 +66,42 @@ def test_rate_limit_reset(client):
     response = client.post('/api/auth/login', json=data)
     assert response.status_code == 429
 
-    # Aspetta che il rate limit si resetti (61 secondi per sicurezza)
-    time.sleep(61)
+    # Aspetta che il rate limit si resetti (62 secondi per sicurezza)
+    time.sleep(62)  # Aumentiamo il tempo di attesa oltre il minuto per sicurezza
 
     # Ora dovrebbe accettare nuove richieste
     response = client.post('/api/auth/login', json=data)
-    assert response.status_code == 401  # Torna a dare errore di credenziali invece che di rate limit
-    
+    assert response.status_code == 401  # Torna a dare errore di credenziali
+@pytest.mark.timeout(70)
 def test_register_rate_limit(client):
     """Test rate limit per la registrazione"""
-    # Dati di test
     data = {
         'username': 'newuser',
         'password': 'Password123!',
         'email': 'test@example.com'
     }
     
-    # Esegue 6 richieste
     responses = []
     for i in range(6):
-        data['email'] = f'test{i}@example.com'  # Email diverse per evitare errori di duplicazione
-        data['username'] = f'newuser{i}'  # Username diversi
+        data['email'] = f'test{i}@example.com'
+        data['username'] = f'newuser{i}'
         response = client.post('/api/auth/register', json=data)
         responses.append(response)
 
-    # Le prime 5 richieste dovrebbero essere processate
     for response in responses[:5]:
-        assert response.status_code in [201, 400]  # 201 Created o 400 se validation error
+        assert response.status_code in [201, 400]
         
-    # La sesta richiesta dovrebbe essere bloccata dal rate limit
     assert responses[5].status_code == 429
     response_data = responses[5].get_json()
     assert response_data['success'] is False
     assert 'rate limit' in response_data['message'].lower()
 
+@pytest.mark.timeout(70)
 def test_different_endpoints_rate_limits(client, auth_headers):
     """Verifica che i rate limit siano indipendenti per endpoint diversi"""
-    # Esaurisce il rate limit su login
     for _ in range(5):
         client.post('/api/auth/login', 
                    json={'username': 'test', 'password': 'wrong'})
 
-    # Verifica che altri endpoint siano ancora accessibili
     response = client.get('/api/auth/me', headers=auth_headers)
-    assert response.status_code == 200  # Dovrebbe funzionare perché ha un rate limit separato
+    assert response.status_code == 200

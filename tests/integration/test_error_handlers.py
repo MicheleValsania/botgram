@@ -1,6 +1,9 @@
 import pytest
 import json
 from flask import url_for
+from src.backend.middleware.response import APIResponse
+from src.backend.models.models import Account
+from src.backend.config.database import db
 
 def test_json_decode_error(client):
     """Test per JSON malformato"""
@@ -21,7 +24,7 @@ def test_bad_request_error(client):
     
     assert response.status_code == 400
     data = json.loads(response.data)
-    assert data['error_code'] == 'BAD_REQUEST'
+    assert data['error_code'] == 'VALIDATION_ERROR'
     assert not data['success']
 
 def test_unauthorized_error(client):
@@ -36,13 +39,11 @@ def test_unauthorized_error(client):
 def test_forbidden_error(client, auth_headers):
     """Test per accesso negato"""
     # Simuliamo un account disattivato
-    from src.backend.models.models import Account
-    from src.backend.config.database import db
-    
     with client.application.app_context():
         account = Account.query.first()
-        account.is_active = False
-        db.session.commit()
+        if account:
+            account.is_active = False
+            db.session.commit()
     
     response = client.get('/api/interactions/', headers=auth_headers)
     
@@ -62,11 +63,7 @@ def test_not_found_error(client, auth_headers):
 
 def test_internal_server_error(client, auth_headers):
     """Test per errore interno del server"""
-    # Forziamo un errore interno
-    with client.application.app_context():
-        # Simuliamo un errore nel database
-        from src.backend.models.models import Account
-        Account.query.filter_by(id=-1).first_or_404()
+    response = client.get('/api/test-internal-error', headers=auth_headers)
     
     assert response.status_code == 500
     data = json.loads(response.data)

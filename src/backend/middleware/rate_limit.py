@@ -1,4 +1,4 @@
-from flask import current_app, request, jsonify
+from flask import current_app, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
@@ -33,11 +33,10 @@ class RateLimiter:
             @app.errorhandler(429)
             def ratelimit_handler(e):
                 current_app.logger.warning(f"Rate limit exceeded: {str(e.description)}")
-                return app.make_response(
-                    (jsonify({
-                        'success': False,
-                        'message': f"Rate limit exceeded: {str(e.description)}"
-                    }), 429)
+                return APIResponse.error(
+                    message=f"Rate limit exceeded: {str(e.description)}",
+                    status_code=429,
+                    error_code="RATE_LIMIT_EXCEEDED"
                 )
 
     @classmethod
