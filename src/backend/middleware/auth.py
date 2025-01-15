@@ -19,10 +19,18 @@ def token_required(f):
             try:
                 token = auth_header.split(" ")[1]
             except IndexError:
-                return APIResponse.error(message='Token mancante', status_code=401)
+                return APIResponse.error(
+                    message='Token mancante',
+                    status_code=401,
+                    error_code="UNAUTHORIZED"
+                )
 
         if not token:
-            return APIResponse.error(message='Token mancante', status_code=401)
+            return APIResponse.error(
+                message='Token mancante',
+                status_code=401,
+                error_code="UNAUTHORIZED"
+            )
 
         try:
             # Decodifica il token
@@ -34,9 +42,17 @@ def token_required(f):
             # Memorizza l'ID dell'utente in g invece che in request
             g.user_id = payload['sub']
         except jwt.ExpiredSignatureError:
-            return APIResponse.error(message='Token scaduto', status_code=401)
+            return APIResponse.error(
+                message='Token scaduto',
+                status_code=401,
+                error_code="UNAUTHORIZED"
+            )
         except jwt.InvalidTokenError:
-            return APIResponse.error(message='Token non valido', status_code=401)
+            return APIResponse.error(
+                message='Token non valido',
+                status_code=401,
+                error_code="UNAUTHORIZED"
+            )
 
         return f(*args, **kwargs)
 
