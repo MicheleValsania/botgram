@@ -36,22 +36,31 @@ def test_unauthorized_error(client):
     assert data['error_code'] == 'UNAUTHORIZED'
     assert not data['success']
 
+
 def test_forbidden_error(client, auth_headers):
     """Test per accesso negato"""
     # Simuliamo un account disattivato
     with client.application.app_context():
         account = Account.query.first()
+        print(f"Initial account state: {account.is_active}")
         if account:
             account.is_active = False
             db.session.commit()
+            # Verifica dopo il commit
+            db.session.refresh(account)
+            print(f"Account state after commit: {account.is_active}")
+            # Doppio check diretto dal database
+            check_account = Account.query.get(account.id)
+            print(f"Account state from fresh query: {check_account.is_active}")
     
     response = client.get('/api/interactions/', headers=auth_headers)
+    print(f"Response status: {response.status_code}")
+    print(f"Response data: {response.data.decode()}")
     
     assert response.status_code == 403
     data = json.loads(response.data)
     assert data['error_code'] == 'FORBIDDEN'
     assert not data['success']
-
 def test_not_found_error(client, auth_headers):
     """Test per risorsa non trovata"""
     response = client.get('/api/not/exists', headers=auth_headers)
