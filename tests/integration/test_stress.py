@@ -1,12 +1,32 @@
 import pytest
+import aiohttp
+import asyncio
+from multiprocessing import Process
+from src.backend.app import create_app
+import time
+
+def run_app():
+    app = create_app('testing')
+    app.run(host='127.0.0.1', port=5000)
+
+@pytest.fixture(scope="module")
+def server():
+    proc = Process(target=run_app)
+    proc.start()
+    time.sleep(1)  # Aspetta che il server si avvii
+    yield
+    proc.terminate()
+    proc.join()
+
+import pytest
 import asyncio
 import aiohttp
 import time
 from datetime import datetime
 
-async def make_request(session, url, auth_headers, request_num):
+async def make_request(session, url, auth_headers, request_num, json_data=None):
     try:
-        async with session.post(url, headers=auth_headers) as response:
+        async with session.post(url, headers=auth_headers, json=json_data) as response:
             data = await response.json()
             return {
                 'request_num': request_num,
@@ -22,7 +42,7 @@ async def make_request(session, url, auth_headers, request_num):
             'timestamp': datetime.now().isoformat()
         }
 
-async def stress_test_endpoint(base_url, auth_headers, num_requests=100, concurrent_requests=10):
+async def stress_test_endpoint(base_url, auth_headers, num_requests=100, concurrent_requests=10, json_data=None):
     """
     Esegue test di stress su un endpoint
     
@@ -31,13 +51,14 @@ async def stress_test_endpoint(base_url, auth_headers, num_requests=100, concurr
         auth_headers: Headers di autenticazione
         num_requests: Numero totale di richieste
         concurrent_requests: Numero di richieste concorrenti
+        json_data: Dati JSON da inviare con la richiesta
     """
     results = []
     
     async with aiohttp.ClientSession() as session:
         tasks = []
         for i in range(num_requests):
-            task = make_request(session, base_url, auth_headers, i)
+            task = make_request(session, base_url, auth_headers, i, json_data)
             tasks.append(task)
             
             if len(tasks) >= concurrent_requests:
@@ -77,16 +98,34 @@ def analyze_results(results):
     }
 
 @pytest.mark.asyncio
-async def test_auth_rate_limiting():
+async def test_auth_rate_limiting(server):
     """Test di stress per il rate limiting dell'autenticazione"""
+    # Crea un account di test usando aiohttp
+    register_url = 'http://localhost:5000/api/auth/register'
+    register_data = {
+        'username': 'stresstest',
+        'password': 'Password123!',
+        'email': 'stress@test.com'
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(register_url, json=register_data) as response:
+            assert response.status in [201, 400]  # 400 se l'account esiste già
+    
+    # Usa le credenziali per il test di stress
     base_url = 'http://localhost:5000/api/auth/login'
     auth_headers = {'Content-Type': 'application/json'}
+    login_data = {
+        'username': 'stresstest',
+        'password': 'Password123!'
+    }
     
     results = await stress_test_endpoint(
         base_url=base_url,
         auth_headers=auth_headers,
         num_requests=50,
-        concurrent_requests=5
+        concurrent_requests=5,
+        json_data=login_data
     )
     
     analysis = analyze_results(results)
@@ -103,7 +142,7 @@ async def test_auth_rate_limiting():
     print(f"Status codes: {analysis['status_counts']}")
 
 @pytest.mark.asyncio
-async def test_api_rate_limiting():
+async def test_api_rate_limiting(server):
     """Test di stress per il rate limiting delle API"""
     base_url = 'http://localhost:5000/api/interactions'
     auth_headers = {
