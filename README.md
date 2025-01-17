@@ -14,6 +14,38 @@ A Flask-based Instagram automation tool for educational purposes and experimenta
 - 📈 Engagement optimization
 - 🎨 Modern web interface
 
+## ✨ Current Features
+
+### 🔐 Session Management
+- Secure session creation and validation
+- Automatic session cleanup and invalidation
+- Cookie and user agent management
+
+### 📱 Instagram Operations
+- Follow/Unfollow users
+- Like posts
+- Comment on posts
+- Secure logout
+
+### 🛡 Safety Features
+- Rate limiting protection
+- Error handling and recovery
+- Session validation
+- Secure cookie management
+
+### 🔄 API Endpoints
+- `/api/instagram/session`: Session management
+- `/api/instagram/follow`: Follow operations
+- `/api/instagram/like`: Like operations  
+- `/api/instagram/comment`: Comment operations
+- `/api/instagram/limits`: Rate limit info
+
+### 🧪 Testing
+- Comprehensive unit tests
+- Integration tests for all endpoints
+- Mock session handling
+- Error scenario coverage
+
 ## 🛠 Tech Stack
 
 - **Backend**: Python, Flask
