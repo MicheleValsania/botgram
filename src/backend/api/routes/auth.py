@@ -1,10 +1,11 @@
-from flask import Blueprint, request, g
+from flask import Blueprint, request, g, current_app
+from flask_login import login_user, logout_user, current_user, login_required
 from datetime import datetime
-import json  # Aggiunto import json
-from werkzeug.exceptions import BadRequest  # Aggiunto import BadRequest
-from marshmallow import ValidationError  # Aggiunto import ValidationError
+import json
+from werkzeug.exceptions import BadRequest
+from marshmallow import ValidationError
 from ...models.models import Account, db
-from ...middleware.auth import generate_token, token_required, hash_password, verify_password, validate_password
+from ...middleware.auth import token_required, generate_auth_tokens, hash_password, verify_password, validate_password
 from ...schemas.schemas import AccountSchema, LoginSchema, LoginResponseSchema
 from ...middleware.response import APIResponse, handle_api_errors
 from ...middleware.rate_limit import auth_rate_limits, api_rate_limits
@@ -20,7 +21,6 @@ login_response_schema = LoginResponseSchema()
 @handle_api_errors
 def register():
     """Endpoint per la registrazione di un nuovo account"""
-    # Valida i dati in ingresso con lo schema
     try:
         data = account_schema.load(request.get_json())
     except Exception as e:
@@ -39,9 +39,13 @@ def register():
         return APIResponse.error(message='Email già registrata', status_code=400)
     
     # Crea il nuovo account
+    hashed_password = hash_password(data['password'])
+    current_app.logger.info(f"Password fornita durante registrazione: {data['password']}")
+    current_app.logger.info(f"Password hash durante registrazione: {hashed_password}")
+    
     new_account = Account(
         username=data['username'],
-        password_hash=hash_password(data['password']),
+        password_hash=hashed_password,
         email=data['email'],
         is_active=True,
         created_at=datetime.utcnow()
@@ -51,30 +55,33 @@ def register():
     db.session.add(new_account)
     db.session.commit()
     
-    # Genera il token
-    token = generate_token(new_account.id)
+    # Login automatico dopo la registrazione
+    login_user(new_account)
     
-    # Prepara la risposta
+    # Genera i token
+    tokens = generate_auth_tokens(new_account.id)
+    
     response_data = {
-        'access_token': token,
-        'token_type': 'Bearer',
-        'expires_in': 24 * 60 * 60,  # 24 ore in secondi
-        'user_id': new_account.id
+        'user': account_schema.dump(new_account),
+        'access_token': tokens['access_token'],
+        'refresh_token': tokens['refresh_token'],
+        'token_type': tokens['token_type']
     }
     
     return APIResponse.success(
-        data=login_response_schema.dump(response_data),
-        message='Registrazione completata con successo',
+        data=response_data,
+        message='Account creato con successo',
         status_code=201
     )
 
 @auth_bp.route('/login', methods=['POST'])
-@auth_rate_limits()  # Poi questo
+@auth_rate_limits()
 @handle_api_errors
 @log_request()
 def login():
     try:
         json_data = request.get_json()
+        current_app.logger.info(f"Raw request data: {json_data}")
     except (json.JSONDecodeError, BadRequest):
         return APIResponse.error(
             message="JSON non valido",
@@ -84,6 +91,7 @@ def login():
         
     try:
         data = login_schema.load(json_data)
+        current_app.logger.info(f"Validated data: {data}")
     except ValidationError as e:
         return APIResponse.error(
             message="Errore di validazione",
@@ -92,7 +100,61 @@ def login():
             errors=e.messages
         )
     
-    # resto del codice...
+    # Trova l'account
+    account = Account.query.filter_by(username=data['username']).first()
+    if not account:
+        return APIResponse.error(
+            message="Username non trovato",
+            status_code=401,
+            error_code="INVALID_USERNAME"
+        )
+    
+    current_app.logger.info(f"Password hash: {account.password_hash}")
+    current_app.logger.info(f"Password fornita: {data['password']}")
+    
+    if not verify_password(data['password'], account.password_hash):
+        return APIResponse.error(
+            message="Password non valida",
+            status_code=401,
+            error_code="INVALID_PASSWORD"
+        )
+    
+    if not account.is_active:
+        return APIResponse.error(
+            message="Account disattivato",
+            status_code=403,
+            error_code="ACCOUNT_DISABLED"
+        )
+    
+    # Aggiorna last_login
+    account.last_login = datetime.utcnow()
+    db.session.commit()
+    
+    # Login con Flask-Login
+    login_user(account)
+    
+    # Genera i token
+    tokens = generate_auth_tokens(account.id)
+    
+    response_data = {
+        'user': account_schema.dump(account),
+        'access_token': tokens['access_token'],
+        'refresh_token': tokens['refresh_token'],
+        'token_type': tokens['token_type']
+    }
+    
+    return APIResponse.success(
+        data=response_data,
+        message='Login effettuato con successo',
+        status_code=200
+    )
+
+@auth_bp.route('/logout', methods=['POST'])
+@token_required
+def logout():
+    """Endpoint per il logout"""
+    logout_user()
+    return APIResponse.success(message='Logout effettuato con successo')
 
 @auth_bp.route('/me', methods=['GET'])
 @token_required
@@ -120,14 +182,22 @@ def update_me():
     if not account:
         return APIResponse.error(message='Account non trovato', status_code=404)
     
-    data = request.get_json()
+    try:
+        data = account_schema.load(request.get_json(), partial=True)
+    except ValidationError as e:
+        return APIResponse.error(
+            message="Errore di validazione",
+            status_code=400,
+            error_code="VALIDATION_ERROR",
+            errors=e.messages
+        )
     
-    if 'email' in data:
-        existing_account = Account.query.filter_by(email=data['email']).first()
-        if existing_account and existing_account.id != account.id:
-            return APIResponse.error(message='Email già registrata', status_code=400)
-        account.email = data['email']
-        
+    # Aggiorna i campi modificabili
+    for field in ['email', 'username']:
+        if field in data:
+            setattr(account, field, data[field])
+    
+    # Se è presente una nuova password, validala e aggiornala
     if 'password' in data:
         is_valid, message = validate_password(data['password'])
         if not is_valid:
@@ -153,5 +223,8 @@ def delete_me():
     
     account.is_active = False
     db.session.commit()
+    
+    # Logout dopo la disattivazione
+    logout_user()
     
     return APIResponse.success(message='Account disattivato con successo')

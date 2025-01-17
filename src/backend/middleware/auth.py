@@ -1,128 +1,89 @@
 from functools import wraps
 from flask import request, g, jsonify, current_app
-import jwt
+from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
-from ..config.database import db
+from ..models import db
 from ..models.models import Account
 from ..middleware.response import APIResponse
 
 def token_required(f):
     """Decorator per proteggere le route che richiedono autenticazione"""
     @wraps(f)
+    @jwt_required()
     def decorated(*args, **kwargs):
         current_app.logger.info("Entrando nel decorator token_required")
-        token = None
-
-        # Cerca il token nell'header Authorization
-        if 'Authorization' in request.headers:
-            auth_header = request.headers['Authorization']
-            try:
-                token = auth_header.split(" ")[1]
-            except IndexError:
-                return APIResponse.error(
-                    message='Token mancante',
-                    status_code=401,
-                    error_code="UNAUTHORIZED"
-                )
-
-        if not token:
+        
+        # Get user identity from JWT
+        user_id = get_jwt_identity()
+        
+        # Verifica se l'account esiste ed è attivo
+        current_app.logger.info("Verifica account")
+        db.session.rollback()  # Prova a pulire la sessione
+        account = Account.query.get(user_id)
+        current_app.logger.info(f"Account trovato: {account is not None}, attivo: {account.is_active if account else None}")
+        
+        if not account:
             return APIResponse.error(
-                message='Token mancante',
-                status_code=401,
-                error_code="UNAUTHORIZED"
-            )
-
-        try:
-            # Decodifica il token
-            current_app.logger.info("Decodifica del token")
-            payload = jwt.decode(
-                token,
-                current_app.config.get('SECRET_KEY'),
-                algorithms=['HS256']
-            )
-            
-            # Verifica se l'account esiste ed è attivo
-            current_app.logger.info("Verifica account")
-            db.session.rollback()  # Prova a pulire la sessione
-            account = Account.query.get(payload['sub'])
-            current_app.logger.info(f"Account trovato: {account is not None}, attivo: {account.is_active if account else None}")
-            
-            if not account:
-                return APIResponse.error(
-                    message='Account non trovato',
-                    status_code=403,
-                    error_code="FORBIDDEN"
-                )
-                
-            if not account.is_active:
-                current_app.logger.info("Account disattivato, ritorno 403")
-                return APIResponse.error(
-                    message='Account disattivato',
-                    status_code=403,
-                    error_code="FORBIDDEN"
-                )
-            
-            # Memorizza l'ID dell'utente in g
-            g.user_id = payload['sub']
-            
-        except jwt.ExpiredSignatureError:
-            return APIResponse.error(
-                message='Token scaduto',
-                status_code=401,
-                error_code="UNAUTHORIZED"
-            )
-        except jwt.InvalidTokenError:
-            return APIResponse.error(
-                message='Token non valido',
+                message='Account non trovato',
                 status_code=401,
                 error_code="UNAUTHORIZED"
             )
             
+        if not account.is_active:
+            return APIResponse.error(
+                message='Account disattivato',
+                status_code=403,
+                error_code="FORBIDDEN"
+            )
+
+        # Salva l'ID dell'utente nel contesto globale
+        g.user_id = user_id
+        
         return f(*args, **kwargs)
-
+    
     return decorated
 
-
-def generate_token(user_id):
-    """Genera un JWT token per l'utente"""
-    try:
-        payload = {
-            'exp': datetime.utcnow() + timedelta(days=1),
-            'iat': datetime.utcnow(),
-            'sub': user_id
-        }
-        return jwt.encode(
-            payload,
-            current_app.config.get('SECRET_KEY'),
-            algorithm='HS256'
-        )
-    except Exception as e:
-        return str(e)
-
+def generate_auth_tokens(user_id):
+    """Genera access token e refresh token per l'utente"""
+    access_token = create_access_token(identity=user_id)
+    refresh_token = create_refresh_token(identity=user_id)
+    return {
+        'access_token': access_token,
+        'refresh_token': refresh_token,
+        'token_type': 'bearer'
+    }
 
 def validate_password(password):
     """Valida la password secondo criteri di sicurezza"""
     if len(password) < 8:
-        return False, "La password deve essere di almeno 8 caratteri"
+        return False, "La password deve essere lunga almeno 8 caratteri"
     
-    if not any(char.isdigit() for char in password):
-        return False, "La password deve contenere almeno un numero"
-    
-    if not any(char.isupper() for char in password):
+    if not any(c.isupper() for c in password):
         return False, "La password deve contenere almeno una lettera maiuscola"
-    
-    if not any(char.islower() for char in password):
+        
+    if not any(c.islower() for c in password):
         return False, "La password deve contenere almeno una lettera minuscola"
-    
+        
+    if not any(c.isdigit() for c in password):
+        return False, "La password deve contenere almeno un numero"
+        
     return True, "Password valida"
-
 
 def hash_password(password):
     """Genera l'hash della password"""
-    return generate_password_hash(password)
+    current_app.logger.info(f"Generazione hash per password: {password}")
+    hashed = generate_password_hash(password, method='pbkdf2:sha256', salt_length=16)
+    current_app.logger.info(f"Hash generato: {hashed}")
+    return hashed
 
-
-def verify_password(hash_value, password):
+def verify_password(password, hash_value):
     """Verifica la password con il suo hash"""
-    return check_password_hash(hash_value, password)
+    try:
+        current_app.logger.info(f"Verifica password - Hash: {hash_value}, Password: {password}")
+        result = check_password_hash(hash_value, password)
+        current_app.logger.info(f"Risultato verifica: {result}")
+        return result
+    except Exception as e:
+        current_app.logger.error(f"Errore durante la verifica della password: {str(e)}")
+        return False

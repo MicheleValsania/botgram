@@ -3,11 +3,13 @@ from flask_migrate import Migrate
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
-from .config.database import db
+from .models import db
 from .api import api
 from .middleware.rate_limit import RateLimiter
 from .middleware.logging import init_logging
 from .middleware.response import APIResponse
+from .auth.auth_manager import init_auth
+from .config.config import DevelopmentConfig, TestingConfig, ProductionConfig
 
 def create_app(config_name: str = 'development') -> Flask:
     """Crea e configura l'applicazione Flask
@@ -23,31 +25,38 @@ def create_app(config_name: str = 'development') -> Flask:
     
     app = Flask(__name__)
     
-    # Configurazione CORS
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": ["http://localhost:3000", "http://localhost:5173"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"]
-        }
-    })
+    # Map delle configurazioni
+    config_map = {
+        'development': DevelopmentConfig,
+        'testing': TestingConfig,
+        'production': ProductionConfig
+    }
     
     # Carica la configurazione appropriata
-    if config_name == 'testing':
-        app.config.from_object('backend.config.TestingConfig')
-    elif config_name == 'production':
-        app.config.from_object('backend.config.ProductionConfig')
-    else:
-        app.config.from_object('backend.config.DevelopmentConfig')
+    config_class = config_map.get(config_name, DevelopmentConfig)
+    app.config.from_object(config_class)
     
     # Override configurazione da variabili d'ambiente
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', app.config.get('SECRET_KEY', 'dev-key'))
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', app.config.get('SQLALCHEMY_DATABASE_URI'))
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
+    # Configurazione JWT
+    app.config['JWT_SECRET_KEY'] = app.config['SECRET_KEY']
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 3600  # 1 ora
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = 2592000  # 30 giorni
+    
     # Inizializza le estensioni
     db.init_app(app)
     Migrate(app, db)
+    
+    # Inizializza i sistemi di autenticazione
+    init_auth(app)
+    
+    # Configurazione rate limiter (prima degli error handler)
+    app.config['RATELIMIT_ENABLED'] = True
+    app.config['RATELIMIT_STORAGE_URL'] = 'memory://'
+    app.config['RATELIMIT_STRATEGY'] = 'fixed-window'
     
     # Inizializza il rate limiter
     RateLimiter.init_app(app)
@@ -57,6 +66,15 @@ def create_app(config_name: str = 'development') -> Flask:
     
     # Registra i blueprint
     app.register_blueprint(api, url_prefix='/api')
+    
+    # Abilita CORS
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["http://localhost:3000", "http://localhost:5173"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
     
     # Gestione errori globale
     @app.errorhandler(404)

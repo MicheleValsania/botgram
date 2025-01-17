@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_migrate import Migrate
-from .config.database import db
+from .models import db
 from .middleware.rate_limit import RateLimiter
 from .middleware.logging import init_logging
 from .config.config import DevelopmentConfig, TestingConfig, ProductionConfig

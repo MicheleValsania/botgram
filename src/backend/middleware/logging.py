@@ -108,14 +108,22 @@ def log_request():
                 'body': request.get_json(silent=True) if request.is_json else None
             }
             
-            # Rimuovi informazioni sensibili
-            if request_data['body'] and 'password' in request_data['body']:
-                request_data['body']['password'] = '[REDACTED]'
-            if 'Authorization' in request_data['headers']:
-                request_data['headers']['Authorization'] = '[REDACTED]'
+            # Crea una copia dei dati per il logging
+            log_data = {
+                'method': request_data['method'],
+                'url': request_data['url'],
+                'headers': dict(request_data['headers']),
+                'body': dict(request_data['body']) if request_data['body'] else None
+            }
+            
+            # Rimuovi informazioni sensibili dalla copia per il logging
+            if log_data['body'] and 'password' in log_data['body']:
+                log_data['body']['password'] = '[REDACTED]'
+            if 'Authorization' in log_data['headers']:
+                log_data['headers']['Authorization'] = '[REDACTED]'
             
             # Log della richiesta
-            logging.info(f"Incoming request: {json.dumps(request_data)}")
+            logging.info(f"Incoming request: {json.dumps(log_data)}")
             
             # Misura il tempo di risposta
             start_time = time.time()

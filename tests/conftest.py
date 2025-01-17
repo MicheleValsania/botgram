@@ -1,10 +1,10 @@
 import pytest
-from src.backend import create_app
-from src.backend.config.database import db
+from src.backend.app import create_app
+from src.backend.models import db
 from src.backend.models.models import Account
-from src.backend.middleware.auth import hash_password, generate_token
-from src.backend.middleware.rate_limit import RateLimiter  # Aggiungi questa importazione
-from src.backend.middleware.response import APIResponse    # Aggiungi questa importazione
+from src.backend.middleware.auth import hash_password, generate_auth_tokens
+from src.backend.middleware.rate_limit import RateLimiter
+from src.backend.middleware.response import APIResponse
 
 @pytest.fixture(autouse=True)
 def reset_rate_limits(app):
@@ -42,17 +42,14 @@ def db_session(app):
         connection = db.engine.connect()
         transaction = connection.begin()
         
-        # Usiamo direttamente db.session
         session = db.session
-        
-        # In alternativa, se proprio vogliamo una sessione scoped:
-        # session = db.session.registry()
         
         yield session
         
         transaction.rollback()
         connection.close()
         session.remove()
+
 @pytest.fixture
 def test_account(app, db_session):
     """Create a test account that remains in session"""
@@ -63,7 +60,7 @@ def test_account(app, db_session):
         
     account = Account(
         username='testuser',
-        password_hash=hash_password('Password123!'),
+        password_hash=hash_password('TestPassword123'),
         email='test@example.com',
         is_active=True
     )
@@ -74,8 +71,8 @@ def test_account(app, db_session):
 @pytest.fixture
 def auth_headers(test_account):
     """Create authentication headers for testing protected routes"""
-    token = generate_token(test_account.id)
-    return {'Authorization': f'Bearer {token}'}
+    tokens = generate_auth_tokens(test_account.id)
+    return {'Authorization': f'Bearer {tokens["access_token"]}'}
 
 @pytest.fixture(autouse=True)
 def reset_rate_limits(app):
