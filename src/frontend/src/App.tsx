@@ -3,6 +3,10 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { SessionProvider } from './context/SessionContext';
 import ProtectedLayout from './components/common/ProtectedLayout';
 import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import ManualActions from './pages/ManualActions';
+import Sessions from './pages/Sessions';
+import Settings from './pages/Settings';
 
 // Import Bootstrap CSS
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -16,7 +20,11 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedLayout />}>
-            {/* Protected routes will be added here */}
+            <Route index element={<Dashboard />} />
+            <Route path="actions" element={<ManualActions />} />
+            <Route path="sessions" element={<Sessions />} />
+            <Route path="settings" element={<Settings />} />
+            {/* Other protected routes will be added here */}
           </Route>
         </Routes>
       </Router>
