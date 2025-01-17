@@ -5,7 +5,7 @@ Handles authentication, session persistence, and rate limiting for Instagram int
 import logging
 import time
 from typing import Optional, Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from ..middleware.rate_limit import RateLimiter
@@ -18,30 +18,26 @@ class InstagramSession:
     """Represents an Instagram session with authentication and rate limiting."""
     username: str
     session_id: str
-    created_at: datetime
-    last_action: datetime
-    rate_limits: Dict[str, int]
-    cookies: Dict[str, str]
-    user_agent: str
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    last_action: datetime = field(default_factory=datetime.utcnow)
+    rate_limits: Dict[str, int] = field(default_factory=lambda: {
+        'follow': InstagramConfig.FOLLOW_LIMIT_PER_DAY,
+        'like': InstagramConfig.LIKE_LIMIT_PER_DAY,
+        'comment': InstagramConfig.COMMENT_LIMIT_PER_DAY
+    })
+    cookies: Dict[str, str] = field(default_factory=dict)
+    user_agent: str = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     is_valid: bool = True
     
     @classmethod
     def create(cls, username: str, session_id: str, cookies: Dict[str, str], 
-               user_agent: str) -> 'InstagramSession':
+               user_agent: Optional[str] = None) -> 'InstagramSession':
         """Creates a new Instagram session."""
-        now = datetime.utcnow()
         return cls(
             username=username,
             session_id=session_id,
-            created_at=now,
-            last_action=now,
-            rate_limits={
-                'follow': InstagramConfig.FOLLOW_LIMIT_PER_DAY,
-                'like': InstagramConfig.LIKE_LIMIT_PER_DAY,
-                'comment': InstagramConfig.COMMENT_LIMIT_PER_DAY
-            },
             cookies=cookies,
-            user_agent=user_agent
+            user_agent=user_agent or cls.user_agent
         )
     
     def update_last_action(self) -> None:
@@ -74,11 +70,17 @@ class InstagramSession:
 
 class InstagramSessionManager:
     """Manages Instagram sessions and their lifecycle."""
+    
     _sessions: Dict[str, InstagramSession] = {}
     
     @classmethod
-    def create_session(cls, username: str, session_id: str, 
-                      cookies: Dict[str, str], user_agent: str) -> InstagramSession:
+    def create_session(
+        cls,
+        username: str,
+        session_id: str,
+        cookies: Dict[str, str],
+        user_agent: Optional[str] = None
+    ) -> InstagramSession:
         """Creates and stores a new Instagram session."""
         session = InstagramSession.create(
             username=username,
@@ -86,6 +88,7 @@ class InstagramSessionManager:
             cookies=cookies,
             user_agent=user_agent
         )
+        
         cls._sessions[username] = session
         logger.info(f"Created new Instagram session for user: {username}")
         return session
@@ -97,8 +100,8 @@ class InstagramSessionManager:
         if not session:
             return None
             
-        if session.is_session_expired():
-            logger.info(f"Session expired for user: {username}")
+        # Check if session is expired (24 hours)
+        if datetime.utcnow() - session.created_at > timedelta(hours=24):
             cls.invalidate_session(username)
             return None
             

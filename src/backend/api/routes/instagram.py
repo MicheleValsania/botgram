@@ -1,224 +1,176 @@
-# src/backend/api/routes/instagram.py
-
-from flask import Blueprint, request, g
-from marshmallow import ValidationError
-
+"""Instagram API routes."""
+from flask import Blueprint, request, jsonify
 from ...middleware.auth import token_required
-from ...middleware.rate_limit import instagram_rate_limits
 from ...middleware.response import APIResponse
-from ...middleware.logging import log_request
-from ...instagram.client import InstagramClient
 from ...instagram.session import InstagramSessionManager
-from ...schemas.instagram_schemas import (
-    InstagramFollowSchema, 
-    InstagramLikeSchema,
-    InstagramCommentSchema,
-    InstagramSessionSchema
+from ...instagram.client import InstagramClient
+from ...instagram.schemas import (
+    FollowSchema, LikeSchema, CommentSchema, SessionSchema
 )
+from ...config import InstagramConfig
 
 instagram_bp = Blueprint('instagram', __name__)
 
 @instagram_bp.route('/session', methods=['POST'])
 @token_required
-@log_request()
 def create_session():
-    """Crea una nuova sessione Instagram."""
-    try:
-        # Valida i dati della sessione
-        schema = InstagramSessionSchema()
-        data = schema.load(request.json)
-        
-        # Crea la sessione
-        session = InstagramSessionManager.create_session(
-            username=data['username'],
-            session_id=data['session_id'],
-            cookies=data['cookies'],
-            user_agent=data['user_agent']
-        )
-        
-        return APIResponse.success(
-            data={'session_created': True},
-            message='Sessione Instagram creata con successo'
-        )
-        
-    except ValidationError as e:
-        return APIResponse.error(
-            message='Dati sessione non validi',
-            error_code='VALIDATION_ERROR',
-            errors=e.messages,
-            status_code=400
-        )
-    except Exception as e:
-        return APIResponse.error(
-            message=f"Errore durante la creazione della sessione: {str(e)}",
-            status_code=500
-        )
+    """Create a new Instagram session."""
+    data = request.get_json()
+    
+    # Validate request data
+    errors = SessionSchema().validate(data)
+    if errors:
+        return APIResponse.error('Invalid request data', errors=errors)
+    
+    # Create session
+    session = InstagramSessionManager.create_session(
+        username=data['username'],
+        session_id=data['session_id'],
+        cookies=data['cookies'],
+        user_agent=data['user_agent']
+    )
+    
+    return APIResponse.success({
+        'session_created': True,
+        'username': session.username
+    })
 
 @instagram_bp.route('/follow', methods=['POST'])
 @token_required
-@instagram_rate_limits()
-@log_request()
 def follow_user():
-    """Segue un utente su Instagram."""
-    try:
-        # Valida i dati della richiesta
-        schema = InstagramFollowSchema()
-        data = schema.load(request.json)
-        
-        # Crea il client Instagram
-        client = InstagramClient(data['username'])
-        
-        # Esegue l'azione
-        response, status_code = client.follow_user(data['target_user_id'])
-        return response, status_code
-        
-    except ValidationError as e:
-        return APIResponse.error(
-            message='Dati non validi',
-            error_code='VALIDATION_ERROR',
-            errors=e.messages,
-            status_code=400
-        )
-    except ValueError as e:
-        return APIResponse.error(
-            message=str(e),
-            error_code='SESSION_ERROR',
-            status_code=401
-        )
-    except Exception as e:
-        return APIResponse.error(
-            message=f"Errore durante il follow: {str(e)}",
-            status_code=500
-        )
+    """Follow a user on Instagram."""
+    data = request.get_json()
+    
+    # Validate request data
+    errors = FollowSchema().validate(data)
+    if errors:
+        return APIResponse.error('Invalid request data', errors=errors)
+    
+    username = data['username']
+    target_user_id = data['target_user_id']
+    
+    # Get user session
+    session = InstagramSessionManager.get_session(username)
+    if not session or not session.is_valid:
+        return APIResponse.error('No valid session found', error_code='INVALID_SESSION', status_code=401)
+    
+    # Check rate limits
+    if session.rate_limits['follow'] <= 0:
+        return APIResponse.error('Rate limit exceeded', error_code='RATE_LIMIT_EXCEEDED', status_code=429)
+    
+    # Create Instagram client
+    client = InstagramClient(username=username)
+    
+    # Follow user
+    response, status_code = client.follow_user(target_user_id)
+    if status_code != 200:
+        return APIResponse.error('Failed to follow user', error_code='FOLLOW_ERROR', status_code=status_code)
+    
+    # Update rate limits
+    session.rate_limits['follow'] -= 1
+    
+    return APIResponse.success({'status': response.get('status', 'ok')})
 
 @instagram_bp.route('/like', methods=['POST'])
 @token_required
-@instagram_rate_limits()
-@log_request()
 def like_post():
-    """Mette like a un post su Instagram."""
-    try:
-        # Valida i dati della richiesta
-        schema = InstagramLikeSchema()
-        data = schema.load(request.json)
-        
-        # Crea il client Instagram
-        client = InstagramClient(data['username'])
-        
-        # Esegue l'azione
-        response, status_code = client.like_post(data['media_id'])
-        return response, status_code
-        
-    except ValidationError as e:
-        return APIResponse.error(
-            message='Dati non validi',
-            error_code='VALIDATION_ERROR',
-            errors=e.messages,
-            status_code=400
-        )
-    except ValueError as e:
-        return APIResponse.error(
-            message=str(e),
-            error_code='SESSION_ERROR',
-            status_code=401
-        )
-    except Exception as e:
-        return APIResponse.error(
-            message=f"Errore durante il like: {str(e)}",
-            status_code=500
-        )
+    """Like a post on Instagram."""
+    data = request.get_json()
+    
+    # Validate request data
+    errors = LikeSchema().validate(data)
+    if errors:
+        return APIResponse.error('Invalid request data', errors=errors)
+    
+    username = data['username']
+    media_id = data['media_id']
+    
+    # Get user session
+    session = InstagramSessionManager.get_session(username)
+    if not session or not session.is_valid:
+        return APIResponse.error('No valid session found', error_code='INVALID_SESSION', status_code=401)
+    
+    # Check rate limits
+    if session.rate_limits['like'] <= 0:
+        return APIResponse.error('Rate limit exceeded', error_code='RATE_LIMIT_EXCEEDED', status_code=429)
+    
+    # Create Instagram client
+    client = InstagramClient(username=username)
+    
+    # Like post
+    response, status_code = client.like_post(media_id)
+    if status_code != 200:
+        return APIResponse.error('Failed to like post', error_code='LIKE_ERROR', status_code=status_code)
+    
+    # Update rate limits
+    session.rate_limits['like'] -= 1
+    
+    return APIResponse.success({'status': response.get('status', 'ok')})
 
 @instagram_bp.route('/comment', methods=['POST'])
 @token_required
-@instagram_rate_limits()
-@log_request()
 def comment_post():
-    """Commenta un post su Instagram."""
-    try:
-        # Valida i dati della richiesta
-        schema = InstagramCommentSchema()
-        data = schema.load(request.json)
-        
-        # Crea il client Instagram
-        client = InstagramClient(data['username'])
-        
-        # Esegue l'azione
-        response, status_code = client.comment_post(
-            data['media_id'],
-            data['comment_text']
-        )
-        return response, status_code
-        
-    except ValidationError as e:
-        return APIResponse.error(
-            message='Dati non validi',
-            error_code='VALIDATION_ERROR',
-            errors=e.messages,
-            status_code=400
-        )
-    except ValueError as e:
-        return APIResponse.error(
-            message=str(e),
-            error_code='SESSION_ERROR',
-            status_code=401
-        )
-    except Exception as e:
-        return APIResponse.error(
-            message=f"Errore durante il commento: {str(e)}",
-            status_code=500
-        )
+    """Comment on a post on Instagram."""
+    data = request.get_json()
+    
+    # Validate request data
+    errors = CommentSchema().validate(data)
+    if errors:
+        return APIResponse.error('Invalid request data', errors=errors)
+    
+    username = data['username']
+    media_id = data['media_id']
+    comment_text = data['comment_text']
+    
+    # Get user session
+    session = InstagramSessionManager.get_session(username)
+    if not session or not session.is_valid:
+        return APIResponse.error('No valid session found', error_code='INVALID_SESSION', status_code=401)
+    
+    # Check rate limits
+    if session.rate_limits['comment'] <= 0:
+        return APIResponse.error('Rate limit exceeded', error_code='RATE_LIMIT_EXCEEDED', status_code=429)
+    
+    # Create Instagram client
+    client = InstagramClient(username=username)
+    
+    # Comment on post
+    response, status_code = client.comment_post(media_id, comment_text)
+    if status_code != 200:
+        return APIResponse.error('Failed to comment on post', error_code='COMMENT_ERROR', status_code=status_code)
+    
+    # Update rate limits
+    session.rate_limits['comment'] -= 1
+    
+    return APIResponse.success({'status': response.get('status', 'ok')})
 
 @instagram_bp.route('/session/<username>', methods=['DELETE'])
 @token_required
-@log_request()
 def end_session(username):
-    """Termina una sessione Instagram."""
-    try:
-        # Verifica che la sessione esista
-        session = InstagramSessionManager.get_session(username)
-        if not session:
-            return APIResponse.error(
-                message='Sessione non trovata',
-                error_code='SESSION_NOT_FOUND',
-                status_code=404
-            )
-        
-        # Crea il client e effettua il logout
-        client = InstagramClient(username, session)
-        client.logout()
-        
-        return APIResponse.success(
-            message='Sessione terminata con successo'
-        )
-        
-    except Exception as e:
-        return APIResponse.error(
-            message=f"Errore durante la chiusura della sessione: {str(e)}",
-            status_code=500
-        )
+    """End an Instagram session."""
+    # Get user session
+    session = InstagramSessionManager.get_session(username)
+    if not session or not session.is_valid:
+        return APIResponse.error('No valid session found', error_code='INVALID_SESSION', status_code=401)
+    
+    # Create Instagram client and logout
+    client = InstagramClient(username=username)
+    response, status_code = client.logout()
+    
+    if status_code != 200:
+        return APIResponse.error('Failed to end session', error_code='LOGOUT_ERROR', status_code=status_code)
+    
+    return APIResponse.success({'status': response.get('status', 'ok')})
 
 @instagram_bp.route('/limits/<username>', methods=['GET'])
 @token_required
-@log_request()
 def get_limits(username):
-    """Ottiene i limiti rimanenti per un utente."""
-    try:
-        session = InstagramSessionManager.get_session(username)
-        if not session:
-            return APIResponse.error(
-                message='Sessione non trovata',
-                error_code='SESSION_NOT_FOUND',
-                status_code=404
-            )
-        
-        limits = session.get_remaining_limits()
-        return APIResponse.success(
-            data={'limits': limits},
-            message='Limiti recuperati con successo'
-        )
-        
-    except Exception as e:
-        return APIResponse.error(
-            message=f"Errore durante il recupero dei limiti: {str(e)}",
-            status_code=500
-        )
+    """Get rate limits for a user."""
+    session = InstagramSessionManager.get_session(username)
+    if not session or not session.is_valid:
+        return APIResponse.error('No valid session found', error_code='INVALID_SESSION', status_code=401)
+    
+    return APIResponse.success({
+        'limits': session.rate_limits,
+        'username': username
+    })
