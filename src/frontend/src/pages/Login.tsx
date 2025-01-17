@@ -23,18 +23,19 @@ const Login: React.FC = () => {
     onSubmit: async (values) => {
       try {
         setError(null);
-        const authResponse = await api.login(values);
-        if (authResponse.data.success) {
-          localStorage.setItem('token', authResponse.data.token);
-          await login(
-            values.username,
-            authResponse.data.session_id,
-            authResponse.data.cookies
-          );
+        const response = await api.login(values);
+        if (response.data && response.data.data && response.data.data.access_token) {
+          localStorage.setItem('token', response.data.data.access_token);
+          localStorage.setItem('refresh_token', response.data.data.refresh_token);
+          await login(values.username, '', {});
           navigate('/');
+        } else {
+          setError('Login failed: Invalid response from server');
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Login failed');
+        console.error('Login error:', err);
+        const errorMessage = err.response?.data?.message || (err instanceof Error ? err.message : 'Login failed');
+        setError(errorMessage);
       }
     },
   });
