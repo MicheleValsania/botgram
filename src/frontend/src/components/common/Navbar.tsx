@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../../context/SessionContext';
-import { FaInstagram, FaCog, FaSignOutAlt } from 'react-icons/fa';
+import { FaCog, FaSignOutAlt } from 'react-icons/fa';
 
 const Navbar: React.FC = () => {
   const { session, logout } = useSession();
@@ -17,9 +17,14 @@ const Navbar: React.FC = () => {
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container">
-        <Link className="navbar-brand" to="/">
-          <FaInstagram className="me-2" />
-          Instagram Bot
+        <Link className="navbar-brand d-flex align-items-center" to="/">
+          <img
+            src="/static/images/logo.svg"
+            alt="Botgram Logo"
+            height="30"
+            className="me-2"
+          />
+          Botgram
         </Link>
 
         <button

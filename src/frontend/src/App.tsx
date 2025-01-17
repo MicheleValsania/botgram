@@ -8,10 +8,8 @@ import ManualActions from './pages/ManualActions';
 import Sessions from './pages/Sessions';
 import Settings from './pages/Settings';
 
-// Import Bootstrap CSS
-import 'bootstrap/dist/css/bootstrap.min.css';
-// Import Bootstrap JS
-import 'bootstrap/dist/js/bootstrap.bundle.min';
+// Import custom styles
+import './styles/global.scss';
 
 const App: React.FC = () => {
   return (
