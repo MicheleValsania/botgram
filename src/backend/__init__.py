@@ -11,6 +11,7 @@ from .auth.auth_manager import init_auth
 from .middleware.error_handlers import register_error_handlers
 from .middleware.rate_limit import RateLimiter
 from .api import register_blueprints
+from .auth.security import check_if_token_is_blacklisted
 
 def create_app(config_name='development'):
     """
@@ -30,7 +31,14 @@ def create_app(config_name='development'):
     # Inizializza le estensioni
     db.init_app(app)
     CORS(app)
-    JWTManager(app)
+    
+    # Initialize JWT
+    jwt = JWTManager(app)
+    
+    @jwt.token_in_blocklist_loader
+    def check_if_token_in_blocklist(jwt_header, jwt_payload):
+        return check_if_token_is_blacklisted(jwt_payload)
+    
     RateLimiter.init_app(app)
     
     with app.app_context():

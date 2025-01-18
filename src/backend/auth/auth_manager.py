@@ -39,7 +39,7 @@ def init_auth(app):
     """
     # Inizializza Flask-Login
     login_manager.init_app(app)
-    login_manager.login_view = 'auth.login'
+    login_manager.login_view = 'api.auth.login'
     login_manager.login_message_category = 'info'
     
     # Inizializza JWT

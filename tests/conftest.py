@@ -3,80 +3,69 @@ Configurazione dei test per l'applicazione.
 """
 
 import pytest
+from datetime import datetime, timezone, timedelta
+from flask import Flask
+from flask.testing import FlaskClient
 from src.backend import create_app
 from src.backend.models import db
 from src.backend.models.models import Account
 from src.backend.auth.password import hash_password
-from src.backend.auth.auth_manager import generate_auth_tokens
-from src.backend.middleware.rate_limit import RateLimiter
 
-@pytest.fixture(scope='session')
+@pytest.fixture
 def app():
-    """Crea e configura una nuova istanza dell'app per testing."""
-    _app = create_app('testing')
+    """Create and configure a test Flask application."""
+    app = create_app('testing')
     
-    # Crea un contesto dell'applicazione
-    with _app.app_context():
-        # Inizializza il Rate Limiter
-        RateLimiter.init_app(_app)
-        
-        # Crea le tabelle del database
+    # Configure JWT for testing
+    app.config['JWT_SECRET_KEY'] = 'test-jwt-secret-key'
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
+    app.config['JWT_BLOCKLIST_ENABLED'] = True
+    app.config['JWT_BLOCKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
+    
+    # Create tables
+    with app.app_context():
         db.create_all()
-        yield _app
-        # Pulisce il database dopo i test
+    
+    yield app
+    
+    # Clean up
+    with app.app_context():
         db.session.remove()
         db.drop_all()
 
 @pytest.fixture
 def client(app):
-    """Un client di test per l'app."""
+    """Create a test client."""
     return app.test_client()
 
 @pytest.fixture
-def db_session(app):
-    """Crea una nuova sessione del database per un test."""
+def test_user(app):
+    """Create a test user."""
     with app.app_context():
-        connection = db.engine.connect()
-        transaction = connection.begin()
+        user = Account(
+            username='testuser',
+            email='test@example.com',
+            password_hash=hash_password('password123'),
+            is_active=True,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.session.add(user)
+        db.session.commit()
         
-        session = db.session
-        
-        yield session
-        
-        transaction.rollback()
-        connection.close()
-        session.remove()
+        return {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'password': 'password123'
+        }
 
 @pytest.fixture
-def test_account(app, db_session):
-    """Crea un account di test per testing l'autenticazione."""
-    account = Account(
-        username='test_user',
-        email='test@example.com',
-        password_hash=hash_password('Test123!'),
-        is_active=True
-    )
-    db_session.add(account)
-    db_session.commit()
-    
-    return account
-
-@pytest.fixture
-def auth_headers(test_account):
-    """Crea header di autenticazione per testing le rotte protette."""
-    tokens = generate_auth_tokens(test_account.id)
-    return {
-        'Authorization': f'Bearer {tokens["access_token"]}',
-        'Content-Type': 'application/json'
-    }
-
-@pytest.fixture(autouse=True)
-def reset_rate_limits(app):
-    """Resetta i limiti di velocità tra i test."""
-    with app.app_context():
-        limiter = RateLimiter.get_instance()
-        yield
-        try:
-            limiter.reset()
-        except Exception as e:
-            app.logger.warning(f"Failed to reset rate limiter: {e}")
+def auth_headers(client, test_user):
+    """Get authentication headers for test user."""
+    response = client.post('/api/auth/login', json={
+        'email': test_user['email'],
+        'password': test_user['password']
+    })
+    token = response.json['data']['access_token']
+    return {'Authorization': f'Bearer {token}'}

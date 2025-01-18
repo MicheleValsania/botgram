@@ -1,4 +1,7 @@
-from datetime import UTC, datetime
+"""
+Database models for the application.
+"""
+from datetime import datetime, timezone
 from flask_login import UserMixin
 from . import db
 
@@ -10,13 +13,18 @@ class Account(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = db.Column(db.DateTime)
+    failed_login_attempts = db.Column(db.Integer, default=0)
+    last_failed_login = db.Column(db.DateTime)
+    locked_until = db.Column(db.DateTime)
     
     # Relationships
     configurations = db.relationship("Configuration", back_populates="account", uselist=False)
     interaction_logs = db.relationship("InteractionLog", back_populates="account")
     target_profiles = db.relationship("TargetProfile", back_populates="account")
+    blacklisted_tokens = db.relationship("BlacklistedToken", back_populates="account")
+    security_logs = db.relationship("SecurityLog", back_populates="account")
 
 class Configuration(db.Model):
     __tablename__ = 'configurations'
@@ -33,8 +41,8 @@ class Configuration(db.Model):
     proxy_settings = db.Column(db.JSON, nullable=True)  # Store proxy configuration as JSON
     user_agent = db.Column(db.String(500), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
-    last_updated = db.Column(db.DateTime, default=lambda: datetime.now(UTC), 
-                           onupdate=lambda: datetime.now(UTC))
+    last_updated = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), 
+                           onupdate=lambda: datetime.now(timezone.utc))
     # Relationship
     account = db.relationship("Account", back_populates="configurations")
 
@@ -48,7 +56,7 @@ class InteractionLog(db.Model):
     target_media_id = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(50))  # 'success', 'failed'
     error_message = db.Column(db.String(500), nullable=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationship
     account = db.relationship("Account", back_populates="interaction_logs")
@@ -66,12 +74,41 @@ class TargetProfile(db.Model):
     is_private = db.Column(db.Boolean, default=False)
     is_verified = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(50), default='pending')  # 'pending', 'processed', 'blacklisted'
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), 
-                         onupdate=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), 
+                         onupdate=lambda: datetime.now(timezone.utc))
     # Relationship
     account = db.relationship("Account", back_populates="target_profiles")
+
+class BlacklistedToken(db.Model):
+    __tablename__ = 'blacklisted_tokens'
+
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), nullable=False, unique=True)
+    token_type = db.Column(db.String(10), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False)
+    blacklisted_on = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    expires = db.Column(db.DateTime, nullable=False)
+
+    # Relationship
+    account = db.relationship("Account", back_populates="blacklisted_tokens")
+
+class SecurityLog(db.Model):
+    __tablename__ = 'security_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
+    event_type = db.Column(db.String(50), nullable=False)  # login_success, login_failed, logout, token_blacklisted, etc.
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(500), nullable=True)
+    details = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Relationship
+    account = db.relationship("Account", back_populates="security_logs")
 
 # Create indexes
 db.Index('ix_interaction_logs_created_at', InteractionLog.created_at)
 db.Index('ix_target_profiles_username', TargetProfile.username)
+db.Index('ix_security_logs_created_at', SecurityLog.created_at)
+db.Index('ix_security_logs_account_id_created_at', SecurityLog.account_id, SecurityLog.created_at)
