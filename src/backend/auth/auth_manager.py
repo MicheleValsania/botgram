@@ -1,39 +1,77 @@
+"""
+Gestione centralizzata dell'autenticazione.
+Supporta sia l'autenticazione basata su sessione (Flask-Login) che token (JWT).
+"""
+
 from flask_login import LoginManager
 from flask_jwt_extended import JWTManager
-from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import timedelta
 from ..models.models import Account
+from .password import hash_password, verify_password, validate_password
 
 login_manager = LoginManager()
 jwt = JWTManager()
 
 @login_manager.user_loader
-def load_user(user_id):
+def load_user(user_id: int) -> Account:
+    """
+    Carica un utente dal database per Flask-Login.
+    
+    Args:
+        user_id: ID dell'utente da caricare
+        
+    Returns:
+        Account: L'oggetto Account se trovato, None altrimenti
+    """
     return Account.query.get(int(user_id))
 
 def init_auth(app):
-    """Initialize authentication systems"""
-    login_manager.init_app(app)
-    jwt.init_app(app)
+    """
+    Inizializza i sistemi di autenticazione.
     
-    # Configure login manager
+    Configura sia Flask-Login per l'autenticazione basata su sessione
+    che JWT per l'autenticazione basata su token.
+    
+    Args:
+        app: L'istanza dell'applicazione Flask
+    """
+    # Inizializza Flask-Login
+    login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = 'info'
     
-    # Configure JWT
-    app.config['JWT_SECRET_KEY'] = app.config['SECRET_KEY']  # Use the same secret key
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 3600  # 1 hour
-    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = 2592000  # 30 days
+    # Inizializza JWT
+    jwt.init_app(app)
+    
+    # Configura la durata dei token JWT
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
 
-def create_user(username, email, password):
-    """Create a new user"""
-    hashed_password = generate_password_hash(password)
-    user = Account(
+def create_user(username: str, email: str, password: str) -> Account:
+    """
+    Crea un nuovo utente nel sistema.
+    
+    Args:
+        username: Username dell'utente
+        email: Email dell'utente
+        password: Password in chiaro dell'utente
+        
+    Returns:
+        Account: L'oggetto Account creato
+        
+    Raises:
+        ValidationError: Se la password non rispetta i criteri di sicurezza
+    """
+    # Valida la password
+    is_valid, message = validate_password(password)
+    if not is_valid:
+        raise ValueError(message)
+    
+    # Crea il nuovo account
+    account = Account(
         username=username,
         email=email,
-        password_hash=hashed_password
+        password_hash=hash_password(password)
     )
-    return user
-
-def verify_password(user, password):
-    """Verify user password"""
-    return check_password_hash(user.password_hash, password)
+    
+    return account
