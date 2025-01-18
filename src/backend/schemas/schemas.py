@@ -56,5 +56,5 @@ class LoginResponseSchema(Schema):
 
 # Schema per il login
 class LoginSchema(Schema):
-    username = fields.Str(required=True)
+    email = fields.Email(required=True)
     password = fields.Str(required=True)

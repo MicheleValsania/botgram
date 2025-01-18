@@ -74,19 +74,19 @@ def handle_api_errors(f):
             return f(*args, **kwargs)
         except ValidationError as e:
             return APIResponse.error(
-                message="Validation error",
+                message=e.message,
                 status_code=400,
-                errors=e.messages
+                errors=e.errors if hasattr(e, 'errors') else None
             )
         except AuthError as e:
             return APIResponse.error(
-                message=str(e),
+                message=e.message,
                 status_code=401,
                 error_code="AUTH_ERROR"
             )
         except NotFoundError as e:
             return APIResponse.error(
-                message=str(e),
+                message=e.message,
                 status_code=404,
                 error_code="NOT_FOUND"
             )
@@ -100,6 +100,7 @@ def handle_api_errors(f):
                 status_code=500,
                 error_code="INTERNAL_ERROR"
             )
+    
     return wrapped
 
 # Custom Exceptions
@@ -111,18 +112,21 @@ class APIError(Exception):
         self.status_code = status_code
         self.error_code = error_code
 
-class ValidationError(APIError):
+class ValidationError(Exception):
     """Errore di validazione dati"""
     def __init__(self, message: str = "Validation error", errors: Optional[Dict] = None):
-        super().__init__(message, status_code=400, error_code="VALIDATION_ERROR")
+        super().__init__(message)
+        self.message = message
         self.errors = errors
 
-class AuthError(APIError):
+class AuthError(Exception):
     """Errore di autenticazione"""
     def __init__(self, message: str = "Authentication error"):
-        super().__init__(message, status_code=401, error_code="AUTH_ERROR")
+        super().__init__(message)
+        self.message = message
 
-class NotFoundError(APIError):
+class NotFoundError(Exception):
     """Errore risorsa non trovata"""
     def __init__(self, message: str = "Resource not found"):
-        super().__init__(message, status_code=404, error_code="NOT_FOUND")
+        super().__init__(message)
+        self.message = message

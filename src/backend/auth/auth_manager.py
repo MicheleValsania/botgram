@@ -4,7 +4,9 @@ Supporta sia l'autenticazione basata su sessione (Flask-Login) che token (JWT).
 """
 
 from flask_login import LoginManager
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import (
+    JWTManager, create_access_token, create_refresh_token
+)
 from datetime import timedelta
 from ..models.models import Account
 from .password import hash_password, verify_password, validate_password
@@ -75,3 +77,22 @@ def create_user(username: str, email: str, password: str) -> Account:
     )
     
     return account
+
+def generate_auth_tokens(user_id: int) -> dict:
+    """
+    Genera access token e refresh token per l'utente.
+    
+    Args:
+        user_id: ID dell'utente
+        
+    Returns:
+        dict: Dizionario contenente access_token e refresh_token
+    """
+    access_token = create_access_token(identity=user_id)
+    refresh_token = create_refresh_token(identity=user_id)
+    
+    return {
+        'access_token': access_token,
+        'refresh_token': refresh_token,
+        'token_type': 'bearer'
+    }
