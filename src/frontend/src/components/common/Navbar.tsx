@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../../context/SessionContext';
-import { FaCog, FaSignOutAlt } from 'react-icons/fa';
+import { FaUser, FaCog, FaSignOutAlt } from 'react-icons/fa';
 
 const Navbar: React.FC = () => {
   const { session, logout } = useSession();
@@ -12,16 +12,20 @@ const Navbar: React.FC = () => {
     navigate('/login');
   };
 
-  if (!session) return null;
+  if (!session.isAuthenticated || !session.user) return null;
 
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container">
         <Link className="navbar-brand d-flex align-items-center" to="/">
           <img
-            src="/static/images/logo.svg"
+            src="/static/images/pluto-logo-dog.jpg"
             alt="Botgram Logo"
-            height="30"
+            style={{ 
+              width: '30px',
+              height: '30px',
+              borderRadius: '50%'
+            }}
             className="me-2"
           />
           Botgram
@@ -44,35 +48,43 @@ const Navbar: React.FC = () => {
               </Link>
             </li>
             <li className="nav-item">
-              <Link className="nav-link" to="/sessions">
-                Sessions
-              </Link>
-            </li>
-            <li className="nav-item">
-              <Link className="nav-link" to="/actions">
-                Actions
+              <Link className="nav-link" to="/settings">
+                Settings
               </Link>
             </li>
           </ul>
 
           <ul className="navbar-nav">
-            <li className="nav-item">
-              <span className="nav-link">
-                {session.username}
-              </span>
-            </li>
-            <li className="nav-item">
-              <Link className="nav-link" to="/settings">
-                <FaCog />
-              </Link>
-            </li>
-            <li className="nav-item">
-              <button
-                className="nav-link btn btn-link"
-                onClick={handleLogout}
+            <li className="nav-item dropdown">
+              <a
+                className="nav-link dropdown-toggle"
+                href="#"
+                role="button"
+                data-bs-toggle="dropdown"
               >
-                <FaSignOutAlt />
-              </button>
+                <FaUser className="me-2" />
+                {session.user.username}
+              </a>
+              <ul className="dropdown-menu dropdown-menu-end">
+                <li>
+                  <Link className="dropdown-item" to="/settings">
+                    <FaCog className="me-2" />
+                    Settings
+                  </Link>
+                </li>
+                <li>
+                  <hr className="dropdown-divider" />
+                </li>
+                <li>
+                  <button
+                    className="dropdown-item text-danger"
+                    onClick={handleLogout}
+                  >
+                    <FaSignOutAlt className="me-2" />
+                    Logout
+                  </button>
+                </li>
+              </ul>
             </li>
           </ul>
         </div>

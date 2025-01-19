@@ -16,7 +16,7 @@ const ProtectedLayout: React.FC = () => {
     );
   }
 
-  if (!session) {
+  if (!session.isAuthenticated || !session.user) {
     return <Navigate to="/login" replace />;
   }
 

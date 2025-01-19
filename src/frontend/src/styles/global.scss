@@ -1,10 +1,10 @@
 // Override Bootstrap variables
 $primary: #405DE6;
 $secondary: #5B51D8;
-$success: #3DBE29;
-$danger: #FD1D1D;
+$success: #3CCF4E;
+$danger: #ED4956;
 $warning: #FCAF45;
-$info: #4F5BD5;
+$info: #64B5F6;
 
 // Import Bootstrap
 @import "bootstrap/scss/bootstrap";
@@ -18,20 +18,50 @@ $info: #4F5BD5;
 
 body {
   background-color: #f8f9fa;
-  color: #2c3e50;
+  color: #333;
+}
+
+// Navbar styles
+.navbar {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  
+  .navbar-brand {
+    font-weight: 600;
+    
+    img {
+      transition: transform 0.2s;
+      
+      &:hover {
+        transform: scale(1.1);
+      }
+    }
+  }
+  
+  .nav-link {
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    
+    &:hover {
+      color: $primary;
+    }
+  }
 }
 
 // Card styles
 .card {
   border: none;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s, box-shadow 0.2s;
-
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  transition: transform 0.2s;
+  
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   }
-
+  
+  .card-title {
+    color: $primary;
+    font-weight: 600;
+  }
+  
   .card-header {
     background-color: white;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
@@ -51,6 +81,15 @@ body {
 
   &:active {
     transform: translateY(0);
+  }
+
+  &-primary {
+    background: linear-gradient(45deg, $primary, $secondary);
+    border: none;
+    
+    &:hover {
+      background: linear-gradient(45deg, darken($primary, 5%), darken($secondary, 5%));
+    }
   }
 }
 

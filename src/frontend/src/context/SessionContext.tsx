@@ -1,99 +1,127 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import axios from 'axios';
+import api from '../services/api';
+
+interface UserProfile {
+  id: number;
+  username: string;
+  email: string;
+}
 
 interface Session {
-  username: string;
-  isValid: boolean;
-  limits?: {
-    follow: number;
-    like: number;
-    comment: number;
-  };
+  user: UserProfile | null;
+  isAuthenticated: boolean;
 }
 
 interface SessionContextType {
-  session: Session | null;
+  session: Session;
   loading: boolean;
   error: string | null;
-  login: (username: string, sessionId: string, cookies: any) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshLimits: () => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [session, setSession] = useState<Session>({ user: null, isAuthenticated: false });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const login = async (username: string, sessionId: string, cookies: any) => {
+  // Check if user is already authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        try {
+          const response = await api.getProfile();
+          if (response.data.success) {
+            setSession({
+              user: response.data.data,
+              isAuthenticated: true
+            });
+          }
+        } catch (err) {
+          // Token is invalid, remove it
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+        }
+      }
+      setLoading(false);
+    };
+
+    checkAuth();
+  }, []);
+
+  const login = async (email: string, password: string) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post('/api/instagram/session', {
-        username,
-        session_id: sessionId,
-        cookies,
-        user_agent: navigator.userAgent
-      });
-
+      const response = await api.login({ email, password });
       if (response.data.success) {
-        setSession({
-          username,
-          isValid: true
-        });
-        await refreshLimits();
+        const { access_token, refresh_token } = response.data.data;
+        localStorage.setItem('access_token', access_token);
+        localStorage.setItem('refresh_token', refresh_token);
+        
+        // Get user profile
+        const profileResponse = await api.getProfile();
+        if (profileResponse.data.success) {
+          setSession({
+            user: profileResponse.data.data,
+            isAuthenticated: true
+          });
+        }
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create session');
-      setSession(null);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Login failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (username: string, email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.register({ username, email, password });
+      if (response.data.success) {
+        // Auto login after registration
+        await login(email, password);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Registration failed');
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
   const logout = async () => {
-    if (!session) return;
-
     setLoading(true);
-    setError(null);
     try {
-      await axios.delete(`/api/instagram/session/${session.username}`);
-      setSession(null);
+      await api.logout();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to end session');
+      console.error('Logout error:', err);
     } finally {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      setSession({ user: null, isAuthenticated: false });
       setLoading(false);
     }
   };
 
-  const refreshLimits = async () => {
-    if (!session) return;
-
-    try {
-      const response = await axios.get(`/api/instagram/limits/${session.username}`);
-      if (response.data.success) {
-        setSession(prev => prev ? {
-          ...prev,
-          limits: response.data.data.limits
-        } : null);
-      }
-    } catch (err) {
-      console.error('Failed to refresh limits:', err);
-    }
-  };
-
-  // Refresh limits periodically
-  useEffect(() => {
-    if (session) {
-      const interval = setInterval(refreshLimits, 60000); // Every minute
-      return () => clearInterval(interval);
-    }
-  }, [session]);
-
   return (
-    <SessionContext.Provider value={{ session, loading, error, login, logout, refreshLimits }}>
+    <SessionContext.Provider
+      value={{
+        session,
+        loading,
+        error,
+        login,
+        logout,
+        register
+      }}
+    >
       {children}
     </SessionContext.Provider>
   );

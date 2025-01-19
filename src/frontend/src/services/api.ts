@@ -6,7 +6,7 @@ axios.defaults.headers.common['Content-Type'] = 'application/json';
 
 // Add auth token to requests
 axios.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('access_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -16,22 +16,47 @@ axios.interceptors.request.use((config) => {
 // Handle response errors
 axios.interceptors.response.use(
   response => response,
-  error => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized access
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async error => {
+    const originalRequest = error.config;
+    
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      // Try to refresh the token
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        try {
+          const response = await axios.post('/api/auth/refresh', {}, {
+            headers: { Authorization: `Bearer ${refreshToken}` }
+          });
+          
+          const { access_token } = response.data.data;
+          localStorage.setItem('access_token', access_token);
+          
+          // Retry the original request with the new token
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          return axios(originalRequest);
+        } catch (refreshError) {
+          // If refresh fails, logout
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        }
+      }
     }
+    
     return Promise.reject(error);
   }
 );
 
-export interface InstagramAction {
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface RegisterData extends LoginCredentials {
   username: string;
-  action_type: 'follow' | 'like' | 'comment';
-  target_user_id?: string;
-  media_id?: string;
-  comment_text?: string;
 }
 
 const api = {
@@ -50,15 +75,33 @@ const api = {
   },
 
   // Instagram actions
-  followUser: (data: InstagramAction) => {
+  followUser: (data: {
+    username: string;
+    action_type: 'follow' | 'like' | 'comment';
+    target_user_id?: string;
+    media_id?: string;
+    comment_text?: string;
+  }) => {
     return axios.post('/api/instagram/follow', data);
   },
 
-  likePost: (data: InstagramAction) => {
+  likePost: (data: {
+    username: string;
+    action_type: 'follow' | 'like' | 'comment';
+    target_user_id?: string;
+    media_id?: string;
+    comment_text?: string;
+  }) => {
     return axios.post('/api/instagram/like', data);
   },
 
-  commentPost: (data: InstagramAction) => {
+  commentPost: (data: {
+    username: string;
+    action_type: 'follow' | 'like' | 'comment';
+    target_user_id?: string;
+    media_id?: string;
+    comment_text?: string;
+  }) => {
     return axios.post('/api/instagram/comment', data);
   },
 
@@ -68,12 +111,27 @@ const api = {
   },
 
   // Auth
-  login: (credentials: { username: string; password: string }) => {
+  login: (credentials: LoginCredentials) => {
     return axios.post('/api/auth/login', credentials);
   },
 
-  register: (userData: { username: string; password: string; email: string }) => {
+  register: (userData: RegisterData) => {
     return axios.post('/api/auth/register', userData);
+  },
+
+  logout: () => {
+    return axios.post('/api/auth/logout');
+  },
+
+  refreshToken: () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    return axios.post('/api/auth/refresh', {}, {
+      headers: { Authorization: `Bearer ${refreshToken}` }
+    });
+  },
+
+  getProfile: () => {
+    return axios.get('/api/auth/me');
   }
 };
 
